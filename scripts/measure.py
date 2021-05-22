@@ -37,9 +37,8 @@ def gen(*, seeds: List[int]) -> None:
 def run(*, command: str, input_path: pathlib.Path, output_path: pathlib.Path, seed: int) -> None:
     logger.info('running the command for seed %d...', seed)
     try:
-        with open(input_path) as fh1:
-            with open(output_path, 'w') as fh2:
-                subprocess.check_call(command, stdin=fh1, stdout=fh2)
+        with open(output_path, 'w') as fh:
+            subprocess.check_call(['cargo', 'run', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'tester', str(input_path), command], stdout=fh)
     except subprocess.SubprocessError:
         logger.exception('failed for seed = %d', seed)
 
@@ -91,7 +90,7 @@ def main() -> 'NoReturn':
     # vis
     pathlib.Path('vis').mkdir(exist_ok=True)
     scores: List[int] = []
-    command = ['cargo', 'build', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'gen']
+    command = ['cargo', 'build', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'vis']
     subprocess.check_output(command)
     for i, seed in enumerate(seeds):
         input_path = pathlib.Path('in', '%04d.txt' % i)
