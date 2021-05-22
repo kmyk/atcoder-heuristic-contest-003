@@ -137,7 +137,7 @@ vector<pair<int, int>> solve_with_random(int sy, int sx, int ty, int tx, RandomE
 vector<pair<int, int>> solve_with_scan(int sy, int sx, int ty, int tx, int scan_y) {
     assert (sy <= ty);
     assert (sx <= tx);
-    assert (sy < scan_y and scan_y < ty);
+    assert (scan_y != sy and scan_y != ty);
     vector<pair<int, int>> path;
     int y = sy;
     int x = sx;
@@ -146,16 +146,16 @@ vector<pair<int, int>> solve_with_scan(int sy, int sx, int ty, int tx, int scan_
         x -= 1;
         path.emplace_back(y, x);
     }
-    while (y < scan_y) {
-        y += 1;
+    while (y != scan_y) {
+        y += (y < scan_y ? 1 : -1);
         path.emplace_back(y, x);
     }
     while (x < W - 1) {
         x += 1;
         path.emplace_back(y, x);
     }
-    while (y < ty) {
-        y += 1;
+    while (y != ty) {
+        y += (y < ty ? 1 : -1);
         path.emplace_back(y, x);
     }
     while (x > tx) {
@@ -271,17 +271,19 @@ vector<pair<int, int>> solve1(int sy, int sx, int ty, int tx, const vector<pair<
 
     if (sx < 10 and W - 10 <= tx) {
         vector<int> scan_ys;
-        REP3 (y, sy + 1, ty) {
+        REP3 (y, max(0, sy - 3), min(H, ty + 3 + 1)) {
+            if (y == sy or y == ty) {
+                continue;
+            }
             if (base_row[y] == INT64_MAX) {
                 scan_ys.push_back(y);
             }
         }
         if (not scan_ys.empty()) {
-            int scan_y = scan_ys[scan_ys.size() / 2];
-            // int scan_y = scan_ys.front();
-            // if (H - scan_ys.back() - 1  < scan_y) {
-            //     scan_y = scan_ys.back();
-            // }
+            int scan_y = scan_ys.front();
+            if (H - scan_ys.back() - 1  < scan_y) {
+                scan_y = scan_ys.back();
+            }
             return solve_with_scan(sy, sx, ty, tx, scan_y);
         }
     }
