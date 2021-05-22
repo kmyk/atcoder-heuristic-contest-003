@@ -472,7 +472,7 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
 
         // solve
         chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
-        predictor.update(gen, clock_now + (clock_end - clock_begin) / K);
+        predictor.update(gen, clock_begin + (clock_end - clock_begin) * query / K);
         // path = solve_with_three(sy, sx, ty, tx, predictor.row, predictor.col);
         auto hr = make_costs_from_base_with_random(predictor.row, gen);
         auto vr = make_costs_from_base_with_random(predictor.col, gen);
