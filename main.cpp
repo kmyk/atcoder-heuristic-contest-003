@@ -59,13 +59,40 @@ const int DY[4] = {-1, 1, 0, 0};
 const int DX[4] = {0, 0, 1, -1};
 
 template <class RandomEngine>
+vector<pair<int, int>> solve1(int sy, int sx, int ty, int tx, const vector<pair<vector<pair<int, int>>, int64_t>>& history, RandomEngine& gen) {
+    assert (sy <= ty);
+    assert (sx <= tx);
+
+    vector<pair<int, int>> path;
+    int y = sy;
+    int x = sx;
+    path.emplace_back(y, x);
+    while (y < ty and x < tx) {
+        int r = uniform_int_distribution<int>(0, ty - y + tx - x - 1)(gen);
+        if (r < ty - y) {
+            y += 1;
+            path.emplace_back(y, x);
+        } else {
+            x += 1;
+            path.emplace_back(y, x);
+        }
+    }
+    while (y < ty) {
+        y += 1;
+        path.emplace_back(y, x);
+    }
+    while (x < tx) {
+        x += 1;
+        path.emplace_back(y, x);
+    }
+    return path;
+}
+
+template <class RandomEngine>
 void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const string&)> write, int K, RandomEngine& gen, chrono::high_resolution_clock::time_point clock_end) {
     chrono::high_resolution_clock::time_point clock_begin = chrono::high_resolution_clock::now();
 
-    array<array<int64_t, W - 1>, H> acc_hr = {};
-    array<array<int64_t, H - 1>, W> acc_vr = {};
-    array<array<int, W - 1>, H> used_hr = {};
-    array<array<int, H - 1>, W> used_vr = {};
+    vector<pair<vector<pair<int, int>>, int64_t>> history;
     REP (query, K) {
         // input
         int sy, sx, ty, tx;
@@ -76,10 +103,6 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         bool is_flipped_vr = false;
         auto flip_vr = [&]() {
             is_flipped_vr = not is_flipped_vr;
-            REP (y, H) {
-                reverse(ALL(acc_vr[y]));
-                reverse(ALL(used_vr[y]));
-            }
             sy = H - sy - 1;
             ty = H - ty - 1;
             REP (i, path.size()) {
@@ -89,10 +112,6 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         bool is_flipped_hr = false;
         auto flip_hr = [&]() {
             is_flipped_hr = not is_flipped_hr;
-            REP (x, W) {
-                reverse(ALL(acc_hr[x]));
-                reverse(ALL(used_hr[x]));
-            }
             sx = W - sx - 1;
             tx = W - tx - 1;
             REP (i, path.size()) {
@@ -105,114 +124,9 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         if (sx > tx) {
             flip_hr();
         }
-        assert (sy <= ty);
-        assert (sx <= tx);
 
-        // estimate costs
-        array<array<double, W - 1>, H> hr = {};
-        REP (y, H) {
-            int used_row = accumulate(ALL(used_hr[y]), 0);
-            int64_t acc_row = accumulate(ALL(acc_hr[y]), 0ll);
-            REP (x, W - 1) {
-                hr[y][x] = used_row == 0 ? 4000 : (5 * acc_hr[y][x] + acc_row) / (5 * used_hr[y][x] + used_row);
-                hr[y][x] += uniform_int_distribution<int>(0, 300)(gen);
-            }
-        }
-        array<array<double, H - 1>, W> vr = {};
-        REP (x, W) {
-            int used_col = accumulate(ALL(used_vr[x]), 0);
-            int64_t acc_col = accumulate(ALL(acc_vr[x]), 0ll);
-            REP (y, H - 1) {
-                vr[x][y] = used_col == 0 ? 4000 : (5 * acc_vr[x][y] + acc_col) / (5 * used_vr[x][y] + used_col);
-                vr[x][y] += uniform_int_distribution<int>(0, 300)(gen);
-            }
-        }
-#ifdef VERBOSE
-        if (query == K - 1) {
-            cerr << "hr" << endl;;
-            REP (y, H) {
-                REP (x, W - 1) {
-                    cerr << hr[y][x] << ' ';
-                }
-                cerr << endl;
-            }
-            cerr << "vr" << endl;;
-            REP (x, W) {
-                REP (y, H - 1) {
-                    cerr << vr[x][y] << ' ';
-                }
-                cerr << endl;
-            }
-        }
-#endif  // VERBOSE
-
-        // construct the path
-        // dijkstra
-        reversed_priority_queue<tuple<double, int, int> > que;
-        array<array<double, W>, H> dist;
-        array<array<pair<int, int>, W>, H> parent;
-        REP (y, H) {
-            fill(ALL(dist[y]), INT64_MAX);
-            fill(ALL(parent[y]), make_pair(-1, -1));
-        }
-        que.emplace(0, sy, sx);
-        dist[sy][sx] = 0;
-        while (not que.empty()) {
-            auto [dist_y_x, y, x] = que.top();
-            que.pop();
-            if (dist[y][x] < dist_y_x) {
-                continue;
-            }
-            REP (i, 4) {
-                int ny = y + DY[i];
-                int nx = x + DX[i];
-                if (ny < 0 or H <= ny or nx < 0 or W <= nx) {
-                    continue;
-                }
-                int64_t ndist = dist[y][x] + (DY[i] ?  vr[x][min(y, ny)] : hr[y][min(x, nx)]);
-                if (ndist < dist[ny][nx]) {
-                    dist[ny][nx] = ndist;
-                    parent[ny][nx] = make_pair(y, x);
-                    que.emplace(ndist, ny, nx);
-                }
-            }
-        }
-        int y = ty;
-        int x = tx;
-        path.emplace_back(y, x);
-        while (parent[y][x] != make_pair(-1, -1)) {
-            tie(y, x) = parent[y][x];
-            path.emplace_back(y, x);
-        }
-        assert (y == sy);
-        assert (x == sx);
-        reverse(ALL(path));
-#if 0
-        // random
-        assert (sy <= sy);
-        assert (sx <= tx);
-        int y = sy;
-        int x = sx;
-        path.emplace_back(y, x);
-        while (y < ty and x < tx) {
-            int r = uniform_int_distribution<int>(0, ty - y + tx - x - 1)(gen);
-            if (r < ty - y) {
-                y += 1;
-                path.emplace_back(y, x);
-            } else {
-                x += 1;
-                path.emplace_back(y, x);
-            }
-        }
-        while (y < ty) {
-            y += 1;
-            path.emplace_back(y, x);
-        }
-        while (x < tx) {
-            x += 1;
-            path.emplace_back(y, x);
-        }
-#endif
+        // solve
+        path = solve1(sy, sx, ty, tx, history, gen);
 
         // stop flipping
         if (is_flipped_vr) {
@@ -228,20 +142,8 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         cerr << "(" << sy << ", " << sx << ") -> (" << ty << ", " << tx << "): " << score << endl;
 #endif  // VERBOSE
 
-        // record the result and update estimation
-        REP (i, path.size() - 1) {
-            auto [ay, ax] = path[i];
-            auto [by, bx] = path[i + 1];
-            if (bx == ax) {
-                acc_hr[ax][min(ay, by)] += score / (path.size() - 1);
-                used_hr[ax][min(ay, by)] += 1;
-            } else if (by == ay) {
-                acc_vr[ay][min(ax, bx)] += score / (path.size() - 1);
-                used_vr[ay][min(ax, bx)] += 1;
-            } else {
-                assert (false);
-            }
-        }
+        // record the result
+        history.emplace_back(path, score);
     }
 }
 
