@@ -48,8 +48,8 @@ jobs:
     - name: Prepare tools/
       if: steps.cache-tools.outputs.cache-hit != 'true'
       run: |
-        wget https://img.atcoder.jp/ahc002/c993bb7f09d9f8857fc90951fc6af11d.zip
-        unzip c993bb7f09d9f8857fc90951fc6af11d.zip
+        wget https://img.atcoder.jp/ahc003/c1ae4a8996958aa31f5f9d3aa3f51033.zip
+        unzip c1ae4a8996958aa31f5f9d3aa3f51033.zip
 
     - name: Build the visualizer
       run: |
