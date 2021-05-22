@@ -385,15 +385,17 @@ public:
             }
 
             int z = uniform_int_distribution<int>(0, H + W - 1)(gen);
-            int64_t d = uniform_int_distribution<int>(-1000, 1000)(gen);
+            int64_t d = uniform_int_distribution<int>(-100, 100)(gen);
 
             auto& value = (z < H ? row[z] : col[z - H]);
             auto& used = (z < H ? used_row : used_col);
             if (z >= H) {
                 z -= H;
             }
-            if (value + d < 1000 or 9000 < value + d) {
-                continue;
+            if (value + d < 1000) {
+                d = 1000 - value;
+            } else if (9000 < value + d) {
+                d = 9000 - value;
             }
             int64_t delta = 0;
             for (auto [k, j] : used[z]) {
