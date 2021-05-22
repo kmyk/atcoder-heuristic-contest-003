@@ -38,7 +38,7 @@ def run(*, command: str, input_path: pathlib.Path, output_path: pathlib.Path, se
     logger.info('running the command for seed %d...', seed)
     try:
         with open(output_path, 'w') as fh:
-            subprocess.check_call(['cargo', 'run', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'tester', str(input_path), command], stdout=fh)
+            subprocess.check_call([str((pathlib.Path.cwd() / 'tools' / 'target' / 'release' / 'tester').resolve()), str(input_path), command], stdout=fh)
     except subprocess.SubprocessError:
         logger.exception('failed for seed = %d', seed)
 
@@ -81,6 +81,7 @@ def main() -> 'NoReturn':
 
     # run
     pathlib.Path('out').mkdir(exist_ok=True)
+    command = ['cargo', 'build', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'tester']
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
         for i, seed in enumerate(seeds):
             input_path = pathlib.Path('in', '%04d.txt' % i)
