@@ -8,7 +8,8 @@ jobs:
 
     strategy:
       matrix:
-        seed: [0, 100, 200, 300, 400, 500, 600, 700, 800, 900]
+        # seed: [0, 100, 200, 300, 400, 500, 600, 700, 800, 900]
+        seed: [20210522]
 
     steps:
     - uses: actions/checkout@v2
@@ -62,4 +63,4 @@ jobs:
 
     - name: Measure the score
       run: |
-        python3 scripts/measure.py --jobs 2 --count 100 --seed ${{ matrix.seed }}
+        python3 scripts/measure.py --jobs 10 --count 2000 --seed ${{ matrix.seed }}
