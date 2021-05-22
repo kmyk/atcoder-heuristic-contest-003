@@ -80,7 +80,7 @@ vector<pair<int, int>> solve_with_dijkstra(int sy, int sx, int ty, int tx, const
             if (ny < 0 or H <= ny or nx < 0 or W <= nx) {
                 continue;
             }
-            int64_t ndist = dist[y][x] + (DY[i] ?  vr[x][min(y, ny)] : hr[y][min(x, nx)]);
+            int64_t ndist = dist[y][x] + (DY[i] ? vr[x][min(y, ny)] : hr[y][min(x, nx)]);
             if (ndist < dist[ny][nx]) {
                 dist[ny][nx] = ndist;
                 parent[ny][nx] = make_pair(y, x);
@@ -104,196 +104,336 @@ vector<pair<int, int>> solve_with_dijkstra(int sy, int sx, int ty, int tx, const
     return path;
 }
 
+array<array<int64_t, W - 1>, H> make_costs_from_base(const array<int64_t, H>& row) {
+    array<array<int64_t, W - 1>, H> hr;
+    REP (y, H) {
+        fill(ALL(hr[y]), row[y]);
+    }
+    return hr;
+}
+
+template <class RandomEngine>
+array<array<int64_t, W - 1>, H> make_costs_from_base_with_random(const array<int64_t, H>& row, RandomEngine& gen) {
+    array<array<int64_t, W - 1>, H> hr;
+    REP (y, H) {
+        REP (x, W - 1) {
+            hr[y][x] = row[y] + uniform_int_distribution<int>(0, 300)(gen);
+        }
+    }
+    return hr;
+}
+
+class path_composer {
+    vector<pair<int, int>> moves;
+
+public:
+    path_composer(int sy, int sx) {
+        assert (0 <= sy and sy < H);
+        assert (0 <= sx and sx < W);
+        moves.emplace_back(sy, sx);
+    }
+
+    vector<pair<int, int>> operator *() const {
+        vector<pair<int, int>> path;
+        for (auto [ty, tx] : moves) {
+            if (path.empty()) {
+                path.emplace_back(ty, tx);
+            }
+            auto [y, x] = path.back();
+            if (y == ty) {
+                while (x != tx)  {
+                    x += (x < tx ? 1 : -1);
+                    path.emplace_back(y, x);
+                }
+            } else if (x == tx) {
+                while (y != ty)  {
+                    y += (y < ty ? 1 : -1);
+                    path.emplace_back(y, x);
+                }
+            } else {
+                assert (false);
+            }
+        }
+        return path;
+    }
+
+    // A `moves` is the sequence of the corners of a `path`.
+    vector<pair<int, int>> get_moves() const {
+        return moves;
+    }
+
+    operator bool() const {
+        array<array<bool, W>, H> used = {};
+        for (auto [y, x] : **this) {
+            if (used[y][x]) {
+                return false;
+            }
+            used[y][x] = true;
+        }
+        return true;
+    }
+
+    void go_up() {
+        auto [y, x] = moves.back();
+        assert (y - 1 >= 0);
+        moves.emplace_back(y - 1, x);
+    }
+
+    void go_down() {
+        auto [y, x] = moves.back();
+        assert (y + 1 < H);
+        moves.emplace_back(y + 1, x);
+    }
+
+    void go_right() {
+        auto [y, x] = moves.back();
+        assert (x + 1 < W);
+        moves.emplace_back(y, x + 1);
+    }
+
+    void go_left() {
+        auto [y, x] = moves.back();
+        assert (x - 1 >= 0);
+        moves.emplace_back(y, x - 1);
+    }
+
+    void go_row(int ty) {
+        assert (0 <= ty and ty < H);
+        auto [y, x] = moves.back();
+        moves.emplace_back(ty, x);
+    }
+
+    void go_col(int tx) {
+        assert (0 <= tx and tx < W);
+        auto [y, x] = moves.back();
+        moves.emplace_back(y, tx);
+    }
+};
+
+int64_t calculate_score(const vector<pair<int, int>>& moves, const array<int64_t, H>& row, const array<int64_t, W>& col) {
+    assert (not moves.empty());
+    int64_t score = 0;
+    REP (i, moves.size() - 1) {
+        auto [ay, ax] = moves[i];
+        auto [by, bx] = moves[i + 1];
+        if (ay == by) {
+            score += row[ay] * abs(bx - ax);
+        } else if (ax == bx) {
+            score += col[ax] * abs(by - ay);
+        } else {
+            assert (false);
+        }
+    }
+    return score;
+}
+
+vector<pair<int, int>> solve_with_simple(int sy, int sx, int ty, int tx) {
+    path_composer path(sy, sx);
+    path.go_row(ty);
+    path.go_col(tx);
+    return *path;
+}
+
 template <class RandomEngine>
 vector<pair<int, int>> solve_with_random(int sy, int sx, int ty, int tx, RandomEngine& gen) {
     assert (sy <= ty);
     assert (sx <= tx);
 
-    vector<pair<int, int>> path;
-    int y = sy;
-    int x = sx;
-    path.emplace_back(y, x);
-    while (y < ty and x < tx) {
+    path_composer path(sy, sx);
+    while (true) {
+        auto [y, x] = path.get_moves().back();
+        if (y >= ty or x >= tx) {
+            break;
+        }
+
         int r = uniform_int_distribution<int>(0, ty - y + tx - x - 1)(gen);
         if (r < ty - y) {
-            y += 1;
-            path.emplace_back(y, x);
+            path.go_down();
         } else {
-            x += 1;
-            path.emplace_back(y, x);
+            path.go_right();
         }
     }
-    while (y < ty) {
-        y += 1;
-        path.emplace_back(y, x);
-    }
-    while (x < tx) {
-        x += 1;
-        path.emplace_back(y, x);
-    }
-    return path;
+    path.go_row(ty);
+    path.go_col(tx);
+    assert (path);
+    return *path;
 }
 
 vector<pair<int, int>> solve_with_scan(int sy, int sx, int ty, int tx, int scan_y) {
     assert (sy <= ty);
     assert (sx <= tx);
     assert (scan_y != sy and scan_y != ty);
-    vector<pair<int, int>> path;
-    int y = sy;
-    int x = sx;
-    path.emplace_back(y, x);
-    while (x > 0) {
-        x -= 1;
-        path.emplace_back(y, x);
-    }
-    while (y != scan_y) {
-        y += (y < scan_y ? 1 : -1);
-        path.emplace_back(y, x);
-    }
-    while (x < W - 1) {
-        x += 1;
-        path.emplace_back(y, x);
-    }
-    while (y != ty) {
-        y += (y < ty ? 1 : -1);
-        path.emplace_back(y, x);
-    }
-    while (x > tx) {
-        x -= 1;
-        path.emplace_back(y, x);
-    }
-    return path;
+
+    path_composer path(sy, sx);
+    path.go_col(0);
+    path.go_row(scan_y);
+    path.go_col(W - 1);
+    path.go_row(ty);
+    path.go_col(tx);
+    assert (path);
+    return *path;
 }
 
-template <class RandomEngine>
-vector<pair<int, int>> solve1(int sy, int sx, int ty, int tx, const vector<pair<vector<pair<int, int>>, int64_t>>& history, RandomEngine& gen) {
-    assert(sy <= ty);
-    assert(sx <= tx);
-    assert(ty - sy <= tx - sx);
+vector<pair<int, int>> solve_with_three(int sy, int sx, int ty, int tx, const array<int64_t, H>& row, const array<int64_t, W>& col) {
+    assert (sy <= ty);
+    assert (sx <= tx);
 
-    // estimate the base value of rows and cols
-    vector<int64_t> base_row(H, INT64_MAX);
-    vector<int64_t> base_col(W, INT64_MAX);
-    for (auto [path, score] : history) {
-        if (path.size() < H and path.size() < W) {
-            continue;
+    vector<path_composer> cands;
+    int64_t highscore = -1;
+    auto use = [&](const path_composer& path) -> void {
+        int64_t score = calculate_score(path.get_moves(), row, col);
+        if (score <= highscore) {
+            highscore = score;
+            cands.emplace_back(path);
         }
-        vector<int> count_row(H);
-        vector<int> count_col(H);
-        REP (i, path.size() - 1) {
-            auto [ay, ax] = path[i];
-            auto [by, bx] = path[i + 1];
-            if (bx == ax) {
-                count_row[ax] += 1;
-            } else if (by == ay) {
-                count_col[ay] += 1;
-            } else {
-                assert (false);
-            }
-        }
-        REP (y, H) {
-            if (count_row[y] == W - 1) {
-                base_row[y] = score / path.size();
-            }
-        }
-        REP (x, W) {
-            if (count_col[x] == H - 1) {
-                base_col[x] = score / path.size();
+    };
+
+    REP3 (y1, max(0, sy - 3), min(H, ty + 3 + 1)) {
+        REP3 (x, max(0, sx - 3), min(W, tx + 3 + 1)) {
+            REP3 (y2, y1, min(H, ty + 3 + 1)) {
+                path_composer path(sy, sx);
+                path.go_row(y1);
+                path.go_col(x);
+                path.go_row(y2);
+                path.go_col(tx);
+                path.go_row(ty);
+                use(path);
             }
         }
     }
 
-    // analyze history for each edge
-    array<array<int64_t, W - 1>, H> sum_hr = {};
-    array<array<int64_t, H - 1>, W> sum_vr = {};
-    array<array<int, W - 1>, H> used_hr = {};
-    array<array<int, H - 1>, W> used_vr = {};
-    for (auto [path, score] : history) {
-        REP (i, path.size() - 1) {
-            auto [ay, ax] = path[i];
-            auto [by, bx] = path[i + 1];
-            if (bx == ax) {
-                sum_hr[ax][min(ay, by)] += score / (path.size() - 1);
-                used_hr[ax][min(ay, by)] += 1;
-            } else if (by == ay) {
-                sum_vr[ay][min(ax, bx)] += score / (path.size() - 1);
-                used_vr[ay][min(ax, bx)] += 1;
-            } else {
-                assert (false);
-            }
-        }
-    }
-
-    // estimate costs
-    array<array<int64_t, W - 1>, H> hr = {};
-    REP (y, H) {
-        REP (x, W - 1) {
-            if (base_row[y] != INT64_MAX) {
-                hr[y][x] = base_row[y];
-            } else if (used_hr[y][x]) {
-                hr[y][x] = sum_hr[y][x] / used_hr[y][x] + uniform_int_distribution<int>(0, 1000)(gen);
-                hr[y][x] = 5000;
-            } else {
-                hr[y][x] = 5000;
-            }
-        }
-    }
-    array<array<int64_t, H - 1>, W> vr = {};
-    REP (x, W) {
-        REP (y, H - 1) {
-            if (base_col[x] != INT64_MAX) {
-                vr[x][y] = base_col[x];
-            } else if (used_vr[x][y]) {
-                vr[x][y] = sum_vr[x][y] / used_vr[x][y] + uniform_int_distribution<int>(0, 1000)(gen);
-                vr[x][y] = 5000;
-            } else {
-                vr[x][y] = 5000;
-            }
-        }
-    }
-
-#ifdef VERBOSE
-    cerr << "hr" << endl;;
-    REP (y, H) {
-        REP (x, W - 1) {
-            cerr << hr[y][x] << ' ';
-        }
-        cerr << endl;
-    }
-    cerr << "vr" << endl;;
-    REP (x, W) {
-        REP (y, H - 1) {
-            cerr << vr[x][y] << ' ';
-        }
-        cerr << endl;
-    }
-#endif  // VERBOSE
-
-    if (sx < 10 and W - 10 <= tx) {
-        vector<int> scan_ys;
+    REP3 (x1, max(0, sx - 3), min(W, tx + 3 + 1)) {
         REP3 (y, max(0, sy - 3), min(H, ty + 3 + 1)) {
-            if (y == sy or y == ty) {
+            REP3 (x2, x1, min(W, tx + 3 + 1)) {
+                path_composer path(sy, sx);
+                path.go_col(x1);
+                path.go_row(y);
+                path.go_col(x2);
+                path.go_row(ty);
+                path.go_col(tx);
+                use(path);
+            }
+        }
+    }
+
+    while (true) {
+        if (cands.empty()) {
+            return solve_with_simple(sy, sx, ty, tx);
+        }
+        if (cands.back()) {
+            break;
+        }
+        cands.pop_back();
+    }
+    return *cands.back();
+}
+
+class base_predictor {
+    array<vector<pair<int, int>>, H> used_row;
+    array<vector<pair<int, int>>, H> used_col;
+    vector<int64_t> predicted_score;
+    vector<int64_t> actual_score;
+
+public:
+    array<int64_t, H> row;
+    array<int64_t, W> col;
+    base_predictor() {
+        fill(ALL(row), 5000);
+        fill(ALL(col), 5000);
+    }
+
+    void add(const vector<pair<int, int>>& path, int64_t score) {
+        assert (not path.empty());
+        int j = actual_score.size();
+        predicted_score.push_back(calculate_score(path, row, col));
+        actual_score.push_back(score);
+
+        map<int, int> count_row;
+        map<int, int> count_col;
+        REP (i, path.size() - 1) {
+            auto [ay, ax] = path[i];
+            auto [by, bx] = path[i + 1];
+            if (ay == by) {
+                count_row[ay] += 1;
+            } else if (ax == bx) {
+                count_col[ax] += 1;
+            } else {
+                assert (false);
+            }
+        }
+        for (auto [y, k] : count_row) {
+            used_row[y].emplace_back(k, j);
+        }
+        for (auto [x, k] : count_col) {
+            used_col[x].emplace_back(k, j);
+        }
+    }
+
+    template <class RandomEngine>
+    void update(RandomEngine& gen, chrono::high_resolution_clock::time_point clock_end) {
+        chrono::high_resolution_clock::time_point clock_begin = chrono::high_resolution_clock::now();
+
+        int iteration = 0;
+        double temprature = 1.0;
+        for (; ; ++ iteration) {
+            if (iteration % 128 == 0) {
+                chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
+                if (clock_now >= clock_end) {
+                    break;
+                }
+                temprature = (clock_end - clock_now) / (clock_end - clock_begin);
+            }
+
+            int z = uniform_int_distribution<int>(0, H + W - 1)(gen);
+            int64_t d = uniform_int_distribution<int>(-1000, 1000)(gen);
+
+            auto& value = (z < H ? row[z] : col[z - H]);
+            auto& used = (z < H ? used_row : used_col);
+            if (z >= H) {
+                z -= H;
+            }
+            if (value + d < 1000 or 9000 < value + d) {
                 continue;
             }
-            if (base_row[y] == INT64_MAX) {
-                scan_ys.push_back(y);
+            int64_t delta = 0;
+            for (auto [k, j] : used[z]) {
+                delta -= abs(predicted_score[j] - actual_score[j]);
+                delta += abs(predicted_score[j] + k * d - actual_score[j]);
+            }
+            if (delta <= 0 or bernoulli_distribution(exp(- 0.001 * delta / temprature))(gen)) {
+                // accept
+                value += d;
+                for (auto [k, j] : used[z]) {
+                    predicted_score[j] += k * d;
+                }
             }
         }
-        if (not scan_ys.empty()) {
-            int scan_y = scan_ys.front();
-            if (H - scan_ys.back() - 1  < scan_y) {
-                scan_y = scan_ys.back();
-            }
-            return solve_with_scan(sy, sx, ty, tx, scan_y);
+
+#ifdef VERBOSE
+        int64_t loss = 0;
+        REP (j, predicted_score.size()) {
+            loss += abs(predicted_score[j] - actual_score[j]);
         }
+        cerr << "loss = " << loss / (predicted_score.size() + 1) << endl;
+#endif  // VERBOSE
     }
 
-    return solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
-}
+    void flip_hr() {
+        reverse(ALL(used_row));
+        reverse(ALL(row));
+    }
+
+    void flip_vr() {
+        reverse(ALL(used_col));
+        reverse(ALL(col));
+    }
+};
 
 template <class RandomEngine>
 void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const string&)> write, int K, RandomEngine& gen, chrono::high_resolution_clock::time_point clock_end) {
     chrono::high_resolution_clock::time_point clock_begin = chrono::high_resolution_clock::now();
+
+    base_predictor predictor;
 
     vector<pair<vector<pair<int, int>>, int64_t>> history;
     REP (query, K) {
@@ -311,6 +451,7 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
             REP (i, path.size()) {
                 path[i].first = W - path[i].first - 1;
             }
+            predictor.flip_vr();
         };
         bool is_flipped_hr = false;
         auto flip_hr = [&]() {
@@ -320,15 +461,7 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
             REP (i, path.size()) {
                 path[i].second = W - path[i].second - 1;
             }
-        };
-        bool is_flipped_diag = false;
-        auto flip_diag = [&]() {
-            is_flipped_diag = not is_flipped_diag;
-            swap(sx, sy);
-            swap(tx, ty);
-            REP (i, path.size()) {
-                swap(path[i].first, path[i].second);
-            }
+            predictor.flip_hr();
         };
         if (sy > ty) {
             flip_vr();
@@ -336,17 +469,16 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         if (sx > tx) {
             flip_hr();
         }
-        if (ty - sy > tx - sx) {
-            flip_diag();
-        }
 
         // solve
-        path = solve1(sy, sx, ty, tx, history, gen);
+        chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
+        predictor.update(gen, clock_now + (clock_end - clock_begin) / K);
+        // path = solve_with_three(sy, sx, ty, tx, predictor.row, predictor.col);
+        auto hr = make_costs_from_base_with_random(predictor.row, gen);
+        auto vr = make_costs_from_base_with_random(predictor.col, gen);
+        path = solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
 
         // stop flipping
-        if (is_flipped_diag) {
-            flip_diag();
-        }
         if (is_flipped_hr) {
             flip_hr();
         }
@@ -360,9 +492,23 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         cerr << "(" << sy << ", " << sx << ") -> (" << ty << ", " << tx << "): " << score << endl;
 #endif  // VERBOSE
 
-        // record the result
+        // update
         history.emplace_back(path, score);
+        predictor.add(path, score);
     }
+
+#ifdef VERBOSE
+    cerr << "row =";
+    REP (y, H) {
+        cerr << ' ' << predictor.row[y];
+    }
+    cerr << endl;
+    cerr << "col =";
+    REP (x, W) {
+        cerr << ' ' << predictor.col[x];
+    }
+    cerr << endl;
+#endif  // VERBOSE
 }
 
 int main() {
