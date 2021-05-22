@@ -227,6 +227,23 @@ int64_t calculate_score(const vector<pair<int, int>>& moves, const array<int64_t
     return score;
 }
 
+int64_t calculate_score(const vector<pair<int, int>>& path, const array<array<int64_t, W - 1>, H>& hr, const array<array<int64_t, H - 1>, W>& vr) {
+    assert (not path.empty());
+    int64_t score = 0;
+    REP (i, path.size() - 1) {
+        auto [ay, ax] = path[i];
+        auto [by, bx] = path[i + 1];
+        if (ay == by and abs(bx - ax) == 1) {
+            score += hr[ay][min(ax, bx)];
+        } else if (abs(by - ay) == 1 and ax == bx) {
+            score += vr[ax][min(ay, by)];
+        } else {
+            assert (false);
+        }
+    }
+    return score;
+}
+
 vector<pair<int, int>> solve_with_simple(int sy, int sx, int ty, int tx) {
     path_composer path(sy, sx);
     path.go_row(ty);
@@ -329,43 +346,58 @@ vector<pair<int, int>> solve_with_three(int sy, int sx, int ty, int tx, const ar
 }
 
 class base_predictor {
-    array<vector<pair<int, int>>, H> used_row;
-    array<vector<pair<int, int>>, H> used_col;
+    array<array<vector<int>, W - 1>, H> used_hr;
+    array<array<vector<int>, H - 1>, W> used_vr;
     vector<int64_t> predicted_score;
     vector<int64_t> actual_score;
+    array<int, H> sep_x;
+    array<int, W> sep_y;
+    array<int64_t, H> row1, row2;
+    array<int64_t, W> col1, col2;
 
 public:
-    array<int64_t, H> row;
-    array<int64_t, W> col;
     base_predictor() {
-        fill(ALL(row), 5000);
-        fill(ALL(col), 5000);
+        fill(ALL(sep_x), W / 2);
+        fill(ALL(sep_y), H / 2);
+        fill(ALL(row1), 5000);
+        fill(ALL(row2), 5000);
+        fill(ALL(col1), 5000);
+        fill(ALL(col2), 5000);
+    }
+
+    pair<array<array<int64_t, W - 1>, H>, array<array<int64_t, H - 1>, W>> get() const {
+        array<array<int64_t, W - 1>, H> hr;
+        array<array<int64_t, H - 1>, W> vr;
+        REP (y, H) {
+            REP (x, W - 1) {
+                hr[y][x] = (x < sep_x[y] ? row1 : row2)[y];
+            }
+        }
+        REP (x, W) {
+            REP (y, H - 1) {
+                vr[x][y] = (y < sep_y[x] ? col1 : col2)[x];
+            }
+        }
+        return {hr, vr};
     }
 
     void add(const vector<pair<int, int>>& path, int64_t score) {
         assert (not path.empty());
         int j = actual_score.size();
-        predicted_score.push_back(calculate_score(path, row, col));
+        auto [hr, vr] = get();
+        predicted_score.push_back(calculate_score(path, hr, vr));
         actual_score.push_back(score);
 
-        map<int, int> count_row;
-        map<int, int> count_col;
         REP (i, path.size() - 1) {
             auto [ay, ax] = path[i];
             auto [by, bx] = path[i + 1];
             if (ay == by) {
-                count_row[ay] += 1;
+                used_hr[ay][min(ax, bx)].push_back(j);
             } else if (ax == bx) {
-                count_col[ax] += 1;
+                used_vr[ax][min(ay, by)].push_back(j);
             } else {
                 assert (false);
             }
-        }
-        for (auto [y, k] : count_row) {
-            used_row[y].emplace_back(k, j);
-        }
-        for (auto [x, k] : count_col) {
-            used_col[x].emplace_back(k, j);
         }
     }
 
@@ -376,7 +408,7 @@ public:
         int iteration = 0;
         double temprature = 1.0;
         for (; ; ++ iteration) {
-            if (iteration % 128 == 0) {
+            if (iteration >= 1024 and iteration % 128 == 0) {
                 chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
                 if (clock_now >= clock_end) {
                     break;
@@ -384,29 +416,94 @@ public:
                 temprature = (clock_end - clock_now) / (clock_end - clock_begin);
             }
 
-            int z = uniform_int_distribution<int>(0, H + W - 1)(gen);
-            int64_t d = uniform_int_distribution<int>(-100, 100)(gen);
+            if (bernoulli_distribution(0.8)(gen)) {
+                int i = uniform_int_distribution<int>(0, 4 - 1)(gen);
+                int z = uniform_int_distribution<int>(0, H - 1)(gen);
+                int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
 
-            auto& value = (z < H ? row[z] : col[z - H]);
-            auto& used = (z < H ? used_row : used_col);
-            if (z >= H) {
-                z -= H;
-            }
-            if (value + d < 1000) {
-                d = 1000 - value;
-            } else if (9000 < value + d) {
-                d = 9000 - value;
-            }
-            int64_t delta = 0;
-            for (auto [k, j] : used[z]) {
-                delta -= abs(predicted_score[j] - actual_score[j]);
-                delta += abs(predicted_score[j] + k * d - actual_score[j]);
-            }
-            if (delta <= 0 or bernoulli_distribution(exp(- 0.001 * delta / temprature))(gen)) {
-                // accept
-                value += d;
-                for (auto [k, j] : used[z]) {
-                    predicted_score[j] += k * d;
+                auto& value = (i == 0 ? row1 : i == 1 ? row2 : i == 2 ? col1 : col2)[z];
+                if (value + d < 1000) {
+                    d = 1000 - value;
+                } else if (9000 < value + d) {
+                    d = 9000 - value;
+                }
+                int l = 0;
+                int r = H - 1;
+                if (i == 0) {
+                    r = sep_x[z];
+                } else if (i == 1) {
+                    l = sep_x[z];
+                } else if (i == 2) {
+                    r = sep_y[z];
+                } else if (i == 3) {
+                    l = sep_y[z];
+                } else {
+                    assert (false);
+                }
+                auto& used = (i < 2 ? used_hr : used_vr)[z];
+
+                int64_t delta = 0;
+                REP3 (w, l, r) {
+                    for (int j : used[w]) {
+                        delta -= abs(predicted_score[j] - actual_score[j]);
+                        delta += abs(predicted_score[j] + d - actual_score[j]);
+                    }
+                }
+
+                if (delta <= 0 or bernoulli_distribution(exp(- 0.001 * delta / temprature))(gen)) {
+                    // accept
+                    value += d;
+                    REP3 (w, l, r) {
+                        for (int j : used[w]) {
+                            predicted_score[j] += d;
+                        }
+                    }
+                }
+
+            } else {
+                bool is_row = bernoulli_distribution(0.5)(gen);
+                int z = uniform_int_distribution<int>(0, H - 1)(gen);
+                int d = (bernoulli_distribution(0.5)(gen) ? 1 : -1);
+
+                auto& sep = (is_row ? sep_x : sep_y)[z];
+                if (sep + d < 0 or sep + d > W - 1) {
+                    continue;
+                }
+                auto& used = (is_row ? used_hr : used_vr)[z];
+                auto& value1 = (is_row ? row1 : col1)[z];
+                auto& value2 = (is_row ? row2 : col2)[z];
+
+                int64_t delta = 0;
+                if (d == -1) {
+                    for (int j : used[sep - 1]) {
+                        delta -= abs(predicted_score[j] - actual_score[j]);
+                        delta += abs(predicted_score[j] - value1 + value2 - actual_score[j]);
+                    }
+                } else if (d == 1) {
+                    for (int j : used[sep]) {
+                        delta -= abs(predicted_score[j] - actual_score[j]);
+                        delta += abs(predicted_score[j] - value2 + value1 - actual_score[j]);
+                    }
+                } else {
+                    assert (false);
+                }
+
+                if (delta <= 0 or bernoulli_distribution(exp(- 0.001 * delta / temprature))(gen)) {
+                    // accept
+                    if (d == -1) {
+                        for (int j : used[sep - 1]) {
+                            predicted_score[j] += - value1 + value2;
+                        }
+                        sep -= 1;
+                    } else if (d == 1) {
+                        for (int j : used[sep]) {
+                            predicted_score[j] += - value2 + value1;
+                        }
+                        sep += 1;
+                    } else {
+                        assert (false);
+                    }
+                    assert (0 <= sep and sep <= H - 1);
                 }
             }
         }
@@ -418,16 +515,6 @@ public:
         }
         cerr << "loss = " << loss / (predicted_score.size() + 1) << endl;
 #endif  // VERBOSE
-    }
-
-    void flip_hr() {
-        reverse(ALL(used_row));
-        reverse(ALL(row));
-    }
-
-    void flip_vr() {
-        reverse(ALL(used_col));
-        reverse(ALL(col));
     }
 };
 
@@ -443,6 +530,9 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         int sy, sx, ty, tx;
         tie(sy, sx, ty, tx) = read();
         vector<pair<int, int>> path;
+        array<array<int64_t, W - 1>, H> hr;
+        array<array<int64_t, H - 1>, W> vr;
+        tie(hr, vr) = predictor.get();
 
         // make the relatie relation between s and t simple
         bool is_flipped_vr = false;
@@ -453,7 +543,10 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
             REP (i, path.size()) {
                 path[i].first = W - path[i].first - 1;
             }
-            predictor.flip_vr();
+            reverse(ALL(hr));
+            REP (y, H) {
+                reverse(ALL(vr[y]));
+            }
         };
         bool is_flipped_hr = false;
         auto flip_hr = [&]() {
@@ -463,7 +556,10 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
             REP (i, path.size()) {
                 path[i].second = W - path[i].second - 1;
             }
-            predictor.flip_hr();
+            reverse(ALL(vr));
+            REP (x, W) {
+                reverse(ALL(hr[x]));
+            }
         };
         if (sy > ty) {
             flip_vr();
@@ -473,11 +569,6 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         }
 
         // solve
-        chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
-        predictor.update(gen, clock_begin + (clock_end - clock_begin) * query / K);
-        // path = solve_with_three(sy, sx, ty, tx, predictor.row, predictor.col);
-        auto hr = make_costs_from_base_with_random(predictor.row, gen);
-        auto vr = make_costs_from_base_with_random(predictor.col, gen);
         path = solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
 
         // stop flipping
@@ -490,27 +581,16 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
 
         // output
         int64_t score = write(get_command_from_path(path));
+        history.emplace_back(path, score);
 #ifdef VERBOSE
         cerr << "(" << sy << ", " << sx << ") -> (" << ty << ", " << tx << "): " << score << endl;
 #endif  // VERBOSE
 
         // update
-        history.emplace_back(path, score);
+        chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
         predictor.add(path, score);
+        predictor.update(gen, clock_begin + (clock_end - clock_begin) * (query + 1) / K);
     }
-
-#ifdef VERBOSE
-    cerr << "row =";
-    REP (y, H) {
-        cerr << ' ' << predictor.row[y];
-    }
-    cerr << endl;
-    cerr << "col =";
-    REP (x, W) {
-        cerr << ' ' << predictor.col[x];
-    }
-    cerr << endl;
-#endif  // VERBOSE
 }
 
 int main() {
