@@ -274,6 +274,21 @@ public:
         cerr << "M1: iteration = " << iteration << ", loss = " << (history.size() == 0 ? -1 : best.loss / history.size()) << endl;
 #endif  // VERBOSE
     }
+
+    void report() const {
+        cerr << "M1" << endl;
+        cerr << "    loss = " << get_loss() << endl;
+        cerr << "    row =";
+        REP (y, H) {
+            cerr << ' ' << best.row[y];
+        }
+        cerr << endl;
+        cerr << "    col =";
+        REP (x, W) {
+            cerr << ' ' << best.col[x];
+        }
+        cerr << endl;
+    }
 };
 
 struct hr_vr_history {
@@ -500,6 +515,41 @@ public:
         cerr << "M2: iteration = " << iteration << ", loss = " << (history.size() == 0 ? -1 : best.loss / history.size()) << endl;
 #endif  // VERBOSE
     }
+
+    void report() const {
+        cerr << "M2" << endl;
+        cerr << "    loss = " << get_loss() << endl;
+        cerr << "    row1 =";
+        REP (y, H) {
+            cerr << ' ' << best.row1[y];
+        }
+        cerr << endl;
+        cerr << "    row2 =";
+        REP (y, H) {
+            cerr << ' ' << best.row2[y];
+        }
+        cerr << endl;
+        cerr << "    sep_x =";
+        REP (y, H) {
+            cerr << ' ' << best.sep_x[y];
+        }
+        cerr << endl;
+        cerr << "    col1 =";
+        REP (x, W) {
+            cerr << ' ' << best.col1[x];
+        }
+        cerr << endl;
+        cerr << "    col2 =";
+        REP (x, W) {
+            cerr << ' ' << best.col2[x];
+        }
+        cerr << endl;
+        cerr << "    sep_y =";
+        REP (x, W) {
+            cerr << ' ' << best.sep_y[x];
+        }
+        cerr << endl;
+    }
 };
 
 template <class RandomEngine>
@@ -536,6 +586,10 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         cerr << "use M" << (is_m1 ? 1 : 2) << " (M1 " << (calculate_score(path, hr1, vr1) - score) / static_cast<int>(path.size()) << ", M2 " << (calculate_score(path, hr2, vr2) - score) / static_cast<int>(path.size()) << ")" << endl;
 #endif  // VERBOSE
     }
+#ifdef VERBOSE
+    predictor1.report();
+    predictor2.report();
+#endif  // VERBOSE
 }
 
 int main() {
