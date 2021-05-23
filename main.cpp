@@ -36,6 +36,7 @@ constexpr int W = 30;
 
 constexpr int VALUE_MIN = 1000;
 constexpr int VALUE_MAX = 9000;
+constexpr int VALUE_CENTER = (VALUE_MAX + VALUE_MIN) / 2;
 constexpr int DELTA = 2000;
 
 string get_command_from_path(const vector<pair<int, int>>& path) {
@@ -190,8 +191,8 @@ class base_predictor_m1 {
 
 public:
     base_predictor_m1() {
-        fill(ALL(cur.row), 5000);
-        fill(ALL(cur.col), 5000);
+        fill(ALL(cur.row), VALUE_CENTER);
+        fill(ALL(cur.col), VALUE_CENTER);
         cur.loss = 0;
 
         best = cur;
@@ -354,10 +355,10 @@ public:
     base_predictor_m2() {
         fill(ALL(cur.sep_x), W / 2);
         fill(ALL(cur.sep_y), H / 2);
-        fill(ALL(cur.row1), 5000);
-        fill(ALL(cur.row2), 5000);
-        fill(ALL(cur.col1), 5000);
-        fill(ALL(cur.col2), 5000);
+        fill(ALL(cur.row1), VALUE_CENTER);
+        fill(ALL(cur.row2), VALUE_CENTER);
+        fill(ALL(cur.col1), VALUE_CENTER);
+        fill(ALL(cur.col2), VALUE_CENTER);
         cur.loss = 0;
 
         best = cur;
