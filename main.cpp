@@ -346,46 +346,58 @@ vector<pair<int, int>> solve_with_three(int sy, int sx, int ty, int tx, const ar
 }
 
 class base_predictor {
+    vector<int64_t> actual_score;
     array<array<vector<int>, W - 1>, H> used_hr;
     array<array<vector<int>, H - 1>, W> used_vr;
-    vector<int64_t> predicted_score;
-    vector<int64_t> actual_score;
-    array<int, H> sep_x;
-    array<int, W> sep_y;
-    array<int64_t, H> row1, row2;
-    array<int64_t, W> col1, col2;
 
-public:
-    base_predictor() {
-        fill(ALL(sep_x), W / 2);
-        fill(ALL(sep_y), H / 2);
-        fill(ALL(row1), 5000);
-        fill(ALL(row2), 5000);
-        fill(ALL(col1), 5000);
-        fill(ALL(col2), 5000);
-    }
+    struct prediction_state {
+        array<int, H> sep_x;
+        array<int, W> sep_y;
+        array<int64_t, H> row1, row2;
+        array<int64_t, W> col1, col2;
+        vector<int64_t> predicted_score;
+        int64_t loss;
+    };
 
-    pair<array<array<int64_t, W - 1>, H>, array<array<int64_t, H - 1>, W>> get() const {
+    prediction_state cur;
+    prediction_state best;
+
+    pair<array<array<int64_t, W - 1>, H>, array<array<int64_t, H - 1>, W>> get(const prediction_state& state) const {
         array<array<int64_t, W - 1>, H> hr;
         array<array<int64_t, H - 1>, W> vr;
         REP (y, H) {
             REP (x, W - 1) {
-                hr[y][x] = (x < sep_x[y] ? row1 : row2)[y];
+                hr[y][x] = (x < state.sep_x[y] ? state.row1 : state.row2)[y];
             }
         }
         REP (x, W) {
             REP (y, H - 1) {
-                vr[x][y] = (y < sep_y[x] ? col1 : col2)[x];
+                vr[x][y] = (y < state.sep_y[x] ? state.col1 : state.col2)[x];
             }
         }
         return {hr, vr};
     }
 
+public:
+    base_predictor() {
+        fill(ALL(cur.sep_x), W / 2);
+        fill(ALL(cur.sep_y), H / 2);
+        fill(ALL(cur.row1), 5000);
+        fill(ALL(cur.row2), 5000);
+        fill(ALL(cur.col1), 5000);
+        fill(ALL(cur.col2), 5000);
+        cur.loss = 0;
+
+        best = cur;
+    }
+
+    pair<array<array<int64_t, W - 1>, H>, array<array<int64_t, H - 1>, W>> get() const {
+        return get(best);
+    }
+
     void add(const vector<pair<int, int>>& path, int64_t score) {
         assert (not path.empty());
         int j = actual_score.size();
-        auto [hr, vr] = get();
-        predicted_score.push_back(calculate_score(path, hr, vr));
         actual_score.push_back(score);
 
         REP (i, path.size() - 1) {
@@ -398,6 +410,13 @@ public:
             } else {
                 assert (false);
             }
+        }
+
+        REP (i, 2) {
+            auto& state = (i == 0 ? cur : best);
+            auto [hr, vr] = get(state);
+            state.predicted_score.push_back(calculate_score(path, hr, vr));
+            state.loss += abs(state.predicted_score[j] - actual_score[j]);
         }
     }
 
@@ -425,7 +444,7 @@ public:
                 int z = uniform_int_distribution<int>(0, H - 1)(gen);
                 int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
 
-                auto& value = (i == 0 ? row1 : i == 1 ? row2 : i == 2 ? col1 : col2)[z];
+                auto& value = (i == 0 ? cur.row1 : i == 1 ? cur.row2 : i == 2 ? cur.col1 : cur.col2)[z];
                 if (value + d < 1000) {
                     d = 1000 - value;
                 } else if (9000 < value + d) {
@@ -434,13 +453,13 @@ public:
                 int l = 0;
                 int r = H - 1;
                 if (i == 0) {
-                    r = sep_x[z];
+                    r = cur.sep_x[z];
                 } else if (i == 1) {
-                    l = sep_x[z];
+                    l = cur.sep_x[z];
                 } else if (i == 2) {
-                    r = sep_y[z];
+                    r = cur.sep_y[z];
                 } else if (i == 3) {
-                    l = sep_y[z];
+                    l = cur.sep_y[z];
                 } else {
                     assert (false);
                 }
@@ -449,8 +468,8 @@ public:
                 int64_t delta = 0;
                 REP3 (w, l, r) {
                     for (int j : used[w]) {
-                        delta -= abs(predicted_score[j] - actual_score[j]);
-                        delta += abs(predicted_score[j] + d - actual_score[j]);
+                        delta -= abs(cur.predicted_score[j] - actual_score[j]);
+                        delta += abs(cur.predicted_score[j] + d - actual_score[j]);
                     }
                 }
 
@@ -464,7 +483,9 @@ public:
                     value += d;
                     REP3 (w, l, r) {
                         for (int j : used[w]) {
-                            predicted_score[j] += d;
+                            cur.loss -= abs(cur.predicted_score[j] - actual_score[j]);
+                            cur.predicted_score[j] += d;
+                            cur.loss += abs(cur.predicted_score[j] - actual_score[j]);
                         }
                     }
                 }
@@ -474,24 +495,24 @@ public:
                 int z = uniform_int_distribution<int>(0, H - 1)(gen);
                 int d = (bernoulli_distribution(0.5)(gen) ? 1 : -1);
 
-                auto& sep = (is_row ? sep_x : sep_y)[z];
+                auto& sep = (is_row ? cur.sep_x : cur.sep_y)[z];
                 if (sep + d < 0 or sep + d > W - 1) {
                     continue;
                 }
                 auto& used = (is_row ? used_hr : used_vr)[z];
-                auto& value1 = (is_row ? row1 : col1)[z];
-                auto& value2 = (is_row ? row2 : col2)[z];
+                auto& value1 = (is_row ? cur.row1 : cur.col1)[z];
+                auto& value2 = (is_row ? cur.row2 : cur.col2)[z];
 
                 int64_t delta = 0;
                 if (d == -1) {
                     for (int j : used[sep - 1]) {
-                        delta -= abs(predicted_score[j] - actual_score[j]);
-                        delta += abs(predicted_score[j] - value1 + value2 - actual_score[j]);
+                        delta -= abs(cur.predicted_score[j] - actual_score[j]);
+                        delta += abs(cur.predicted_score[j] - value1 + value2 - actual_score[j]);
                     }
                 } else if (d == 1) {
                     for (int j : used[sep]) {
-                        delta -= abs(predicted_score[j] - actual_score[j]);
-                        delta += abs(predicted_score[j] - value2 + value1 - actual_score[j]);
+                        delta -= abs(cur.predicted_score[j] - actual_score[j]);
+                        delta += abs(cur.predicted_score[j] - value2 + value1 - actual_score[j]);
                     }
                 } else {
                     assert (false);
@@ -506,12 +527,16 @@ public:
 #endif  // VERBOSE
                     if (d == -1) {
                         for (int j : used[sep - 1]) {
-                            predicted_score[j] += - value1 + value2;
+                            cur.loss -= abs(cur.predicted_score[j] - actual_score[j]);
+                            cur.predicted_score[j] += - value1 + value2;
+                            cur.loss += abs(cur.predicted_score[j] - actual_score[j]);
                         }
                         sep -= 1;
                     } else if (d == 1) {
                         for (int j : used[sep]) {
-                            predicted_score[j] += - value2 + value1;
+                            cur.loss -= abs(cur.predicted_score[j] - actual_score[j]);
+                            cur.predicted_score[j] += - value2 + value1;
+                            cur.loss += abs(cur.predicted_score[j] - actual_score[j]);
                         }
                         sep += 1;
                     } else {
@@ -519,6 +544,10 @@ public:
                     }
                     assert (0 <= sep and sep <= H - 1);
                 }
+            }
+
+            if (cur.loss < best.loss) {
+                best = cur;
             }
         }
 
