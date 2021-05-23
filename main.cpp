@@ -436,7 +436,7 @@ public:
             }
 
             auto probability = [&](int64_t delta) -> double {
-                constexpr double boltzmann = 0.1;
+                constexpr double boltzmann = 0.0001;
                 return exp(- boltzmann * delta / temprature);
             };
             if (bernoulli_distribution(0.8)(gen)) {
