@@ -60,4 +60,4 @@ jobs:
 
     - name: Measure the score
       run: |
-        pypy3 scripts/measure.py --jobs 2 --count 100 -M ${{ matrix.M }} -D ${{ matrix.D }}
+        pypy3 scripts/measure.py --jobs 2 -M ${{ matrix.M }} -D ${{ matrix.D }}

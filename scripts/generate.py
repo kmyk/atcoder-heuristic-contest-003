@@ -73,10 +73,15 @@ def dijkstra(hr: List[List[int]], vr: List[List[int]], sy: int, sx: int, ty: int
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int)
     parser.add_argument('-M', choices=(1, 2), type=int, default=random.randint(1, 2))
     parser.add_argument('-D', choices=range(100, 2000 + 1), type=int, default=random.randint(100, 2000))
     args = parser.parse_args()
     basicConfig(level=DEBUG)
+
+    if args.seed is not None:
+        random.seed(args.seed * 0xc0ffee)
+        logger.info('seed = %s', args.seed)
 
     logger.info('M = %s', args.M)
     logger.info('D = %s', args.D)

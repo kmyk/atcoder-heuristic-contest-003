@@ -11,10 +11,10 @@ from typing import *
 logger = getLogger(__name__)
 
 
-def gen(*, M: Optional[int], D: Optional[int], input_path: pathlib.Path) -> None:
+def gen(*, M: Optional[int], D: Optional[int], seed: int, input_path: pathlib.Path) -> None:
     logger.info('running the generator...')
     with open(input_path, 'w') as fh:
-        command = [sys.executable, str(pathlib.Path('scripts', 'generate.py'))]
+        command = [sys.executable, str(pathlib.Path('scripts', 'generate.py')), '--seed', str(seed)]
         if M is not None:
             command.append('-M')
             command.append(str(M))
@@ -62,20 +62,29 @@ def main() -> 'NoReturn':
         logger.error('tools/ directory is not found')
         sys.exit(1)
 
+    key = ''
+    if args.M is not None:
+        key += 'M' + str(args.M)
+    if args.D is not None:
+        key += 'D' + str(args.D)
+    if not key:
+        key = 'all'
+
     # gen
     pathlib.Path('in').mkdir(exist_ok=True)
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
         for i in range(args.count):
-            input_path = pathlib.Path('in', '%04d.txt' % i)
-            executor.submit(gen, M=args.M, D=args.D, input_path=input_path)
+            input_path = pathlib.Path('in', '%s-%04d.txt' % (key, i))
+            if not input_path.exists():
+                executor.submit(gen, M=args.M, D=args.D, seed=i, input_path=input_path)
 
     # run
     pathlib.Path('out').mkdir(exist_ok=True)
     command = ['cargo', 'build', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'tester']
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
         for i in range(args.count):
-            input_path = pathlib.Path('in', '%04d.txt' % i)
-            output_path = pathlib.Path('out', '%04d.txt' % i)
+            input_path = pathlib.Path('in', '%s-%04d.txt' % (key, i))
+            output_path = pathlib.Path('out', '%s-%04d.txt' % (key, i))
             executor.submit(run, command=args.command, input_path=input_path, output_path=output_path)
 
     # vis
@@ -84,16 +93,14 @@ def main() -> 'NoReturn':
     command = ['cargo', 'build', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'vis']
     subprocess.check_output(command)
     for i in range(args.count):
-        input_path = pathlib.Path('in', '%04d.txt' % i)
-        output_path = pathlib.Path('out', '%04d.txt' % i)
-        vis_path = pathlib.Path('vis', '%04d.svg' % i)
+        input_path = pathlib.Path('in', '%s-%04d.txt' % (key, i))
+        output_path = pathlib.Path('out', '%s-%04d.txt' % (key, i))
+        vis_path = pathlib.Path('vis', '%s-%04d.svg' % (key, i))
         score = vis(input_path=input_path, output_path=output_path, vis_path=vis_path)
         scores.append(score)
         logger.info('index = {}: score = {}'.format(i, score))
     average = sum(scores) / len(scores)
     logger.info('100 * average = %s', int(100 * average))
-    if os.environ.get('GITHUB_ACTIONS') == 'true':
-        print('::set-output name=average::{}'.format(int(100 * average)))
 
     if min(scores) <= 0:
         sys.exit(1)
