@@ -108,6 +108,8 @@ def main() -> 'NoReturn':
         logger.info('standard deviation = %s', math.sqrt(sum([(score - average)**2 for score in scores]) / len(scores)))
     else:
         logger.info('100 * average = %s', int(100 * average))
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        print('::set-output name=average::{}'.format(int(100 * average)))
 
     if min(scores) <= 0:
         sys.exit(1)
