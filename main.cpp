@@ -34,6 +34,10 @@ private:
 constexpr int H = 30;
 constexpr int W = 30;
 
+constexpr int VALUE_MIN = 1000;
+constexpr int VALUE_MAX = 9000;
+constexpr int DELTA = 2000;
+
 string get_command_from_path(const vector<pair<int, int>>& path) {
     string command;
     assert (not path.empty());
@@ -228,9 +232,6 @@ public:
                 temprature = (clock_end - clock_now) / (clock_end - clock_begin);
             }
 
-            constexpr int VALUE_MIN = 1000;
-            constexpr int VALUE_MAX = 9000;
-
             auto probability = [&](int64_t delta) -> double {
                 constexpr double boltzmann = 0.0001;
                 return exp(- boltzmann * delta / temprature);
@@ -381,9 +382,6 @@ public:
                 }
                 temprature = (clock_end - clock_now) / (clock_end - clock_begin);
             }
-
-            constexpr int VALUE_MIN = 1000;
-            constexpr int VALUE_MAX = 9000;
 
             auto probability = [&](int64_t delta) -> double {
                 constexpr double boltzmann = 0.0001;
