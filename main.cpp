@@ -111,6 +111,165 @@ vector<pair<int, int>> solve_with_dijkstra(int sy, int sx, int ty, int tx, const
     return path;
 }
 
+class path_composer {
+    vector<pair<int, int>> moves;
+
+public:
+    path_composer(int sy, int sx) {
+        assert (0 <= sy and sy < H);
+        assert (0 <= sx and sx < W);
+        moves.emplace_back(sy, sx);
+    }
+
+    vector<pair<int, int>> operator *() const {
+        vector<pair<int, int>> path;
+        for (auto [ty, tx] : moves) {
+            if (path.empty()) {
+                path.emplace_back(ty, tx);
+            }
+            auto [y, x] = path.back();
+            if (y == ty) {
+                while (x != tx)  {
+                    x += (x < tx ? 1 : -1);
+                    path.emplace_back(y, x);
+                }
+            } else if (x == tx) {
+                while (y != ty)  {
+                    y += (y < ty ? 1 : -1);
+                    path.emplace_back(y, x);
+                }
+            } else {
+                assert (false);
+            }
+        }
+        return path;
+    }
+
+    // A `moves` is the sequence of the corners of a `path`.
+    vector<pair<int, int>> get_moves() const {
+        return moves;
+    }
+
+    operator bool() const {
+        array<array<bool, W>, H> used = {};
+        for (auto [y, x] : **this) {
+            if (used[y][x]) {
+                return false;
+            }
+            used[y][x] = true;
+        }
+        return true;
+    }
+
+    void go_up() {
+        auto [y, x] = moves.back();
+        assert (y - 1 >= 0);
+        moves.emplace_back(y - 1, x);
+    }
+
+    void go_down() {
+        auto [y, x] = moves.back();
+        assert (y + 1 < H);
+        moves.emplace_back(y + 1, x);
+    }
+
+    void go_right() {
+        auto [y, x] = moves.back();
+        assert (x + 1 < W);
+        moves.emplace_back(y, x + 1);
+    }
+
+    void go_left() {
+        auto [y, x] = moves.back();
+        assert (x - 1 >= 0);
+        moves.emplace_back(y, x - 1);
+    }
+
+    void go_row(int ty) {
+        assert (0 <= ty and ty < H);
+        auto [y, x] = moves.back();
+        moves.emplace_back(ty, x);
+    }
+
+    void go_col(int tx) {
+        assert (0 <= tx and tx < W);
+        auto [y, x] = moves.back();
+        moves.emplace_back(y, tx);
+    }
+};
+
+vector<pair<int, int>> solve_with_scan(int sy, int sx, int ty, int tx, const array<bool, H>& rows) {
+    assert (sy <= ty);
+
+    constexpr int SCAN_W = 15;
+    if (sx < SCAN_W or tx < SCAN_W) {
+        return vector<pair<int, int>>();
+    }
+
+    path_composer path(sy, sx);
+    bool is_right = true;
+    REP (y, H) {
+        if (rows[y]) {
+            path.go_row(y);
+            path.go_col(is_right ? 0 : SCAN_W - 1);
+            is_right = not is_right;
+        }
+    }
+    path.go_col(tx);
+    path.go_row(ty);
+    if (not path) {
+        return vector<pair<int, int>>();
+    }
+    return *path;
+}
+
+template <class RandomEngine>
+vector<pair<int, int>> solve_with_scan_left(int sy, int sx, int ty, int tx, int k, RandomEngine& gen) {
+    assert ((1 << k) < H);
+    array<bool, H> rows = {};
+    REP (y, H) {
+        rows[y] = (y % (2 << k) < (1 << k));
+    }
+    if (count(ALL(rows), true) % 2 != 0) {
+        int y = uniform_int_distribution<int>(0, H - 1)(gen);
+        rows[y] = not rows[y];
+    }
+    if (sy <= ty) {
+        return solve_with_scan(sy, sx, ty, tx, rows);
+    } else {
+        auto path = solve_with_scan(ty, tx, sy, sx, rows);
+        reverse(ALL(path));
+        return path;
+    }
+}
+
+template <class RandomEngine>
+vector<pair<int, int>> solve_with_scan_right(int sy, int sx, int ty, int tx, int k, RandomEngine& gen) {
+    auto path = solve_with_scan_left(sy, W - sx - 1, ty, W - tx - 1, k, gen);
+    REP (i, path.size()) {
+        path[i].second = W - path[i].second - 1;
+    }
+    return path;
+}
+
+template <class RandomEngine>
+vector<pair<int, int>> solve_with_scan_up(int sy, int sx, int ty, int tx, int k, RandomEngine& gen) {
+    auto path = solve_with_scan_left(sx, sy, tx, ty, k, gen);
+    REP (i, path.size()) {
+        swap(path[i].first, path[i].second);
+    }
+    return path;
+}
+
+template <class RandomEngine>
+vector<pair<int, int>> solve_with_scan_down(int sy, int sx, int ty, int tx, int k, RandomEngine& gen) {
+    auto path = solve_with_scan_up(H - sy - 1, sx, H - ty - 1, tx, k, gen);
+    REP (i, path.size()) {
+        path[i].first = H - path[i].first - 1;
+    }
+    return path;
+}
+
 int64_t calculate_score(const vector<pair<int, int>>& path, const array<array<int64_t, W - 1>, H>& hr, const array<array<int64_t, H - 1>, W>& vr) {
     assert (not path.empty());
     int64_t score = 0;
@@ -556,6 +715,13 @@ template <class RandomEngine>
 void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const string&)> write, int K, RandomEngine& gen, chrono::high_resolution_clock::time_point clock_end) {
     chrono::high_resolution_clock::time_point clock_begin = chrono::high_resolution_clock::now();
 
+    vector<pair<int, int>> scan;
+    REP (i, 4) {
+        REP (k, 5) {
+            scan.emplace_back(i, k);
+        }
+    }
+    shuffle(ALL(scan), gen);
     base_predictor_m1 predictor1;
     base_predictor_m2 predictor2;
 
@@ -566,9 +732,30 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         tie(sy, sx, ty, tx) = read();
 
         // solve
+        vector<pair<int, int>> path;
+        REP (j, scan.size()) {
+            auto [i, k] = scan[j];
+            if (i == 0) {
+                path = solve_with_scan_up(sy, sx, ty, tx, k, gen);
+            } else if (i == 1) {
+                path = solve_with_scan_down(sy, sx, ty, tx, k, gen);
+            } else if (i == 2) {
+                path = solve_with_scan_left(sy, sx, ty, tx, k, gen);
+            } else if (i == 3) {
+                path = solve_with_scan_right(sy, sx, ty, tx, k, gen);
+            } else {
+                assert (false);
+            }
+            if (not path.empty()) {
+                scan.erase(scan.begin() + j);
+                break;
+            }
+        }
         bool is_m1 = (predictor1.get_loss() < predictor2.get_loss() + 1000);
-        auto [hr, vr] = (is_m1 ? predictor1.get() : predictor2.get());
-        vector<pair<int, int>> path = solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
+        if (path.empty()) {
+            auto [hr, vr] = (is_m1 ? predictor1.get() : predictor2.get());
+            path = solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
+        }
 
         // output
         int64_t score = write(get_command_from_path(path));
