@@ -416,6 +416,10 @@ public:
                 temprature = (clock_end - clock_now) / (clock_end - clock_begin);
             }
 
+            auto probability = [&](int64_t delta) -> double {
+                constexpr double boltzmann = 0.1;
+                return exp(- boltzmann * delta / temprature);
+            };
             if (bernoulli_distribution(0.8)(gen)) {
                 int i = uniform_int_distribution<int>(0, 4 - 1)(gen);
                 int z = uniform_int_distribution<int>(0, H - 1)(gen);
@@ -450,8 +454,13 @@ public:
                     }
                 }
 
-                if (delta <= 0 or bernoulli_distribution(exp(- 0.001 * delta / temprature))(gen)) {
+                if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
                     // accept
+#ifdef VERBOSE
+                    if (delta > 0) {
+                        cerr << "bad move " << probability(delta) << endl;
+                    }
+#endif  // VERBOSE
                     value += d;
                     REP3 (w, l, r) {
                         for (int j : used[w]) {
@@ -488,8 +497,13 @@ public:
                     assert (false);
                 }
 
-                if (delta <= 0 or bernoulli_distribution(exp(- 0.001 * delta / temprature))(gen)) {
+                if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
                     // accept
+#ifdef VERBOSE
+                    if (delta > 0) {
+                        cerr << "bad move " << probability(delta) << endl;
+                    }
+#endif  // VERBOSE
                     if (d == -1) {
                         for (int j : used[sep - 1]) {
                             predicted_score[j] += - value1 + value2;
