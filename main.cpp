@@ -325,7 +325,7 @@ public:
         }
 
 #ifdef VERBOSE
-        cerr << "loss = " << (actual_score.empty() ? -1 : best.loss / actual_score.size()) << endl;
+        cerr << "iteration = " << iteration << ", loss = " << (actual_score.empty() ? -1 : best.loss / actual_score.size()) << endl;
 #endif  // VERBOSE
     }
 };
