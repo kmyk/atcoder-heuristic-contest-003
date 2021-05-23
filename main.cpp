@@ -36,7 +36,8 @@ constexpr int W = 30;
 
 constexpr int VALUE_MIN = 1000;
 constexpr int VALUE_MAX = 9000;
-constexpr int DELTA = 2000;
+constexpr int VALUE_CENTER = (VALUE_MAX + VALUE_MIN) / 2;
+constexpr int DELTA = 1000;
 
 string get_command_from_path(const vector<pair<int, int>>& path) {
     string command;
@@ -190,8 +191,8 @@ class base_predictor_m1 {
 
 public:
     base_predictor_m1() {
-        fill(ALL(cur.row), 5000);
-        fill(ALL(cur.col), 5000);
+        fill(ALL(cur.row), VALUE_CENTER);
+        fill(ALL(cur.col), VALUE_CENTER);
         cur.loss = 0;
 
         best = cur;
@@ -242,10 +243,10 @@ public:
             int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
 
             auto& value = (is_row ? cur.row : cur.col)[z];
-            if (value + d < VALUE_MIN) {
-                d = VALUE_MIN - value;
-            } else if (VALUE_MAX < value + d) {
-                d = VALUE_MAX - value;
+            if (value + d < VALUE_MIN + DELTA) {
+                d = VALUE_MIN + DELTA - value;
+            } else if (VALUE_MAX - DELTA < value + d) {
+                d = VALUE_MAX - DELTA - value;
             }
             auto& used = (is_row ? history.used_row : history.used_col)[z];
 
@@ -339,10 +340,10 @@ public:
     base_predictor_m2() {
         fill(ALL(cur.sep_x), W / 2);
         fill(ALL(cur.sep_y), H / 2);
-        fill(ALL(cur.row1), 5000);
-        fill(ALL(cur.row2), 5000);
-        fill(ALL(cur.col1), 5000);
-        fill(ALL(cur.col2), 5000);
+        fill(ALL(cur.row1), VALUE_CENTER);
+        fill(ALL(cur.row2), VALUE_CENTER);
+        fill(ALL(cur.col1), VALUE_CENTER);
+        fill(ALL(cur.col2), VALUE_CENTER);
         cur.loss = 0;
 
         best = cur;
@@ -394,10 +395,10 @@ public:
                 int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
 
                 auto& value = (i == 0 ? cur.row1 : i == 1 ? cur.row2 : i == 2 ? cur.col1 : cur.col2)[z];
-                if (value + d < VALUE_MIN) {
-                    d = VALUE_MIN - value;
-                } else if (VALUE_MAX < value + d) {
-                    d = VALUE_MAX - value;
+                if (value + d < VALUE_MIN + DELTA) {
+                    d = VALUE_MIN + DELTA - value;
+                } else if (VALUE_MAX - DELTA < value + d) {
+                    d = VALUE_MAX - DELTA - value;
                 }
                 int l = 0;
                 int r = H - 1;
@@ -502,12 +503,162 @@ public:
     }
 };
 
+class delta_predictor {
+    vector<vector<pair<int, int>>> history_path;
+    hr_vr_history history;
+
+    struct prediction_state {
+        array<array<int64_t, W - 1>, H> dhr;
+        array<array<int64_t, H - 1>, W> dvr;
+        vector<int64_t> predicted_score;
+        int64_t loss;
+    };
+
+    prediction_state cur;
+    prediction_state best;
+
+    array<array<int64_t, W - 1>, H> base_hr;
+    array<array<int64_t, H - 1>, W> base_vr;
+
+    pair<array<array<int64_t, W - 1>, H>, array<array<int64_t, H - 1>, W>> get(const prediction_state& state) const {
+        array<array<int64_t, W - 1>, H> hr;
+        array<array<int64_t, H - 1>, W> vr;
+        REP (y, H) {
+            REP (x, W - 1) {
+                hr[y][x] = base_hr[y][x] + best.dhr[y][x];
+            }
+        }
+        REP (x, W) {
+            REP (y, H - 1) {
+                vr[x][y] = base_vr[x][y] + best.dvr[x][y];
+            }
+        }
+        return {hr, vr};
+    }
+
+public:
+    delta_predictor() {
+        REP (y, H) {
+            fill(ALL(cur.dhr[y]), 0);
+        }
+        REP (x, W) {
+            fill(ALL(cur.dvr[x]), 0);
+        }
+        cur.loss = 0;
+
+        best = cur;
+
+        REP (y, H) {
+            fill(ALL(base_hr[y]), VALUE_CENTER);
+        }
+        REP (x, W) {
+            fill(ALL(base_vr[x]), VALUE_CENTER);
+        }
+    }
+
+    pair<array<array<int64_t, W - 1>, H>, array<array<int64_t, H - 1>, W>> get() const {
+        return get(best);
+    }
+
+    int64_t get_loss() const {
+        return history.size() == 0 ? 0 : best.loss / history.size();
+    }
+
+    void add(const vector<pair<int, int>>& path, int64_t score) {
+        history.add(path, score);
+
+        history_path.push_back(path);
+        REP (i, 2) {
+            auto& state = (i == 0 ? cur : best);
+            auto [hr, vr] = get(state);
+            int64_t predicted_score = calculate_score(path, hr, vr);
+            state.predicted_score.push_back(predicted_score);
+            state.loss += abs(predicted_score - score);
+        }
+    }
+
+    void set_base(const array<array<int64_t, W - 1>, H>& base_hr_, const array<array<int64_t, H - 1>, W>& base_vr_) {
+        base_hr = base_hr_;
+        base_vr = base_vr_;
+
+        REP (i, 2) {
+            auto& state = (i == 0 ? cur : best);
+            auto [hr, vr] = get(state);
+            state.loss = 0;
+            REP (j, history.size()) {
+                state.predicted_score[j] = calculate_score(history_path[j], hr, vr);
+                state.loss += abs(state.predicted_score[j] - history.actual_score[j]);
+            }
+        }
+    }
+
+    template <class RandomEngine>
+    void update(RandomEngine& gen, chrono::high_resolution_clock::time_point clock_end) {
+        chrono::high_resolution_clock::time_point clock_begin = chrono::high_resolution_clock::now();
+
+        int iteration = 0;
+        double temprature = 1.0;
+        for (; ; ++ iteration) {
+            if (iteration >= 1024 and iteration % 128 == 0) {
+                chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
+                if (clock_now >= clock_end) {
+                    break;
+                }
+                temprature = (clock_end - clock_now) / (clock_end - clock_begin);
+            }
+
+            auto probability = [&](int64_t delta) -> double {
+                constexpr double boltzmann = 0.001;
+                return exp(- boltzmann * delta / temprature);
+            };
+
+            bool is_row = bernoulli_distribution(0.5)(gen);
+            int z1 = uniform_int_distribution<int>(0, H - 1)(gen);
+            int z2 = uniform_int_distribution<int>(0, W - 2)(gen);
+            int64_t d = uniform_int_distribution<int>(-100, 100)(gen);
+
+            auto& value = (is_row ? cur.dhr : cur.dvr)[z1][z2];
+            if (value + d < - DELTA) {
+                d = - DELTA - value;
+            } else if (DELTA < value + d) {
+                d = DELTA - value;
+            }
+            auto& used = (is_row ? history.used_hr : history.used_vr)[z1][z2];
+
+            int64_t delta = 0;
+            for (int j : used) {
+                delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                delta += abs(cur.predicted_score[j] + d - history.actual_score[j]);
+            }
+
+            if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
+                // accept
+                value += d;
+                for (int j : used) {
+                    cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                    cur.predicted_score[j] += d;
+                    cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
+                }
+            }
+
+            if (cur.loss < best.loss) {
+                best = cur;
+            }
+        }
+
+#ifdef VERBOSE
+        cerr << "delta: iteration = " << iteration << ", loss = " << (history.size() == 0 ? -1 : best.loss / history.size()) << endl;
+#endif  // VERBOSE
+    }
+};
+
 template <class RandomEngine>
 void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const string&)> write, int K, RandomEngine& gen, chrono::high_resolution_clock::time_point clock_end) {
     chrono::high_resolution_clock::time_point clock_begin = chrono::high_resolution_clock::now();
 
-    base_predictor_m1 predictor1;
-    base_predictor_m2 predictor2;
+    base_predictor_m1 m1;
+    base_predictor_m2 m2;
+    delta_predictor delta;
 
     vector<pair<vector<pair<int, int>>, int64_t>> history;
     REP (query, K) {
@@ -516,25 +667,35 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         tie(sy, sx, ty, tx) = read();
 
         // solve
-        bool is_m1 = (predictor1.get_loss() < predictor2.get_loss() + 1000);
-        auto [hr, vr] = (is_m1 ? predictor1.get() : predictor2.get());
+        auto [hr, vr] = delta.get();
         vector<pair<int, int>> path = solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
 
         // output
         int64_t score = write(get_command_from_path(path));
         history.emplace_back(path, score);
 
-        // update
-        predictor1.add(path, score);
-        predictor2.add(path, score);
-        predictor1.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 1) / (2 * K));
-        predictor2.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 2) / (2 * K));
+        bool is_m1 = (m1.get_loss() < m2.get_loss() + 1000);
+        auto [base_hr, base_vr] = (is_m1 ? m1.get() : m2.get());
 
 #ifdef VERBOSE
-        auto [hr1, vr1] = predictor1.get();
-        auto [hr2, vr2] = predictor2.get();
-        cerr << "use M" << (is_m1 ? 1 : 2) << " (M1 " << (calculate_score(path, hr1, vr1) - score) / static_cast<int>(path.size()) << ", M2 " << (calculate_score(path, hr2, vr2) - score) / static_cast<int>(path.size()) << ")" << endl;
+        auto [hr1, vr1] = m1.get();
+        auto [hr2, vr2] = m2.get();
+        auto [hrd, vrd] = delta.get();
+        cerr << "use M" << (is_m1 ? 1 : 2);
+        cerr << " (M1 " << (calculate_score(path, hr1, vr1) - score) / static_cast<int>(path.size());
+        cerr << ", M2 " << (calculate_score(path, hr2, vr2) - score) / static_cast<int>(path.size());
+        cerr << ", delta " << (calculate_score(path, hrd, vrd) - score) / static_cast<int>(path.size());
+        cerr << ")" << endl;
 #endif  // VERBOSE
+
+        // update
+        m1.add(path, score);
+        m2.add(path, score);
+        m1.update(gen, clock_begin + (clock_end - clock_begin) * (3 * query + 1) / (3 * K));
+        m2.update(gen, clock_begin + (clock_end - clock_begin) * (3 * query + 2) / (3 * K));
+        delta.add(path, score);
+        delta.set_base(base_hr, base_vr);
+        delta.update(gen, clock_begin + (clock_end - clock_begin) * (3 * query + 3) / (3 * K));
     }
 }
 
