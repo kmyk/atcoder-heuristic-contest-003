@@ -124,7 +124,144 @@ int64_t calculate_score(const vector<pair<int, int>>& path, const array<array<in
     return score;
 }
 
-class base_predictor {
+class base_predictor_m1 {
+    vector<int64_t> actual_score;
+    array<vector<pair<int, int>>, H> used_row;
+    array<vector<pair<int, int>>, W> used_col;
+
+    struct prediction_state {
+        array<int64_t, H> row;
+        array<int64_t, W> col;
+        vector<int64_t> predicted_score;
+        int64_t loss;
+    };
+
+    prediction_state cur;
+    prediction_state best;
+
+    pair<array<array<int64_t, W - 1>, H>, array<array<int64_t, H - 1>, W>> get(const prediction_state& state) const {
+        array<array<int64_t, W - 1>, H> hr;
+        array<array<int64_t, H - 1>, W> vr;
+        REP (y, H) {
+            fill(ALL(hr[y]), state.row[y]);
+        }
+        REP (x, W) {
+            fill(ALL(vr[x]), state.col[x]);
+        }
+        return {hr, vr};
+    }
+
+public:
+    base_predictor_m1() {
+        fill(ALL(cur.row), 5000);
+        fill(ALL(cur.col), 5000);
+        cur.loss = 0;
+
+        best = cur;
+    }
+
+    pair<array<array<int64_t, W - 1>, H>, array<array<int64_t, H - 1>, W>> get() const {
+        return get(best);
+    }
+
+    int64_t get_loss() const {
+        return best.loss;
+    }
+
+    void add(const vector<pair<int, int>>& path, int64_t score) {
+        assert (not path.empty());
+        int j = actual_score.size();
+        actual_score.push_back(score);
+
+        auto use = [&](vector<pair<int, int>>& used) {
+            if (used.empty() or used.back().first != j) {
+                used.emplace_back(j, 0);
+            }
+            used.back().second += 1;
+        };
+        REP (i, path.size() - 1) {
+            auto [ay, ax] = path[i];
+            auto [by, bx] = path[i + 1];
+            if (ay == by) {
+                use(used_row[ay]);
+            } else if (ax == bx) {
+                use(used_col[ax]);
+            } else {
+                assert (false);
+            }
+        }
+
+        REP (i, 2) {
+            auto& state = (i == 0 ? cur : best);
+            auto [hr, vr] = get(state);
+            state.predicted_score.push_back(calculate_score(path, hr, vr));
+            state.loss += abs(state.predicted_score[j] - actual_score[j]);
+        }
+    }
+
+    template <class RandomEngine>
+    void update(RandomEngine& gen, chrono::high_resolution_clock::time_point clock_end) {
+        chrono::high_resolution_clock::time_point clock_begin = chrono::high_resolution_clock::now();
+
+        int iteration = 0;
+        double temprature = 1.0;
+        for (; ; ++ iteration) {
+            if (iteration >= 1024 and iteration % 128 == 0) {
+                chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
+                if (clock_now >= clock_end) {
+                    break;
+                }
+                temprature = (clock_end - clock_now) / (clock_end - clock_begin);
+            }
+
+            constexpr int VALUE_MIN = 1000;
+            constexpr int VALUE_MAX = 9000;
+
+            auto probability = [&](int64_t delta) -> double {
+                constexpr double boltzmann = 0.0001;
+                return exp(- boltzmann * delta / temprature);
+            };
+
+            bool is_row = bernoulli_distribution(0.5)(gen);
+            int z = uniform_int_distribution<int>(0, H - 1)(gen);
+            int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
+
+            auto& value = (is_row ? cur.row : cur.col)[z];
+            if (value + d < VALUE_MIN) {
+                d = VALUE_MIN - value;
+            } else if (VALUE_MAX < value + d) {
+                d = VALUE_MAX - value;
+            }
+            auto& used = (is_row ? used_row : used_col)[z];
+
+            int64_t delta = 0;
+            for (auto [j, cnt] : used) {
+                delta -= abs(cur.predicted_score[j] - actual_score[j]);
+                delta += abs(cur.predicted_score[j] + cnt * d - actual_score[j]);
+            }
+
+            if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
+                // accept
+                value += d;
+                for (auto [j, cnt] : used) {
+                    cur.loss -= abs(cur.predicted_score[j] - actual_score[j]);
+                    cur.predicted_score[j] += cnt * d;
+                    cur.loss += abs(cur.predicted_score[j] - actual_score[j]);
+                }
+            }
+
+            if (cur.loss < best.loss) {
+                best = cur;
+            }
+        }
+
+#ifdef VERBOSE
+        cerr << "M1: iteration = " << iteration << ", loss = " << (actual_score.empty() ? -1 : best.loss / actual_score.size()) << endl;
+#endif  // VERBOSE
+    }
+};
+
+class base_predictor_m2 {
     vector<int64_t> actual_score;
     array<array<vector<int>, W - 1>, H> used_hr;
     array<array<vector<int>, H - 1>, W> used_vr;
@@ -158,7 +295,7 @@ class base_predictor {
     }
 
 public:
-    base_predictor() {
+    base_predictor_m2() {
         fill(ALL(cur.sep_x), W / 2);
         fill(ALL(cur.sep_y), H / 2);
         fill(ALL(cur.row1), 5000);
@@ -172,6 +309,10 @@ public:
 
     pair<array<array<int64_t, W - 1>, H>, array<array<int64_t, H - 1>, W>> get() const {
         return get(best);
+    }
+
+    int64_t get_loss() const {
+        return best.loss;
     }
 
     void add(const vector<pair<int, int>>& path, int64_t score) {
@@ -331,7 +472,7 @@ public:
         }
 
 #ifdef VERBOSE
-        cerr << "iteration = " << iteration << ", loss = " << (actual_score.empty() ? -1 : best.loss / actual_score.size()) << endl;
+        cerr << "M2: iteration = " << iteration << ", loss = " << (actual_score.empty() ? -1 : best.loss / actual_score.size()) << endl;
 #endif  // VERBOSE
     }
 };
@@ -340,7 +481,8 @@ template <class RandomEngine>
 void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const string&)> write, int K, RandomEngine& gen, chrono::high_resolution_clock::time_point clock_end) {
     chrono::high_resolution_clock::time_point clock_begin = chrono::high_resolution_clock::now();
 
-    base_predictor predictor;
+    base_predictor_m1 predictor1;
+    base_predictor_m2 predictor2;
 
     vector<pair<vector<pair<int, int>>, int64_t>> history;
     REP (query, K) {
@@ -350,7 +492,8 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         vector<pair<int, int>> path;
         array<array<int64_t, W - 1>, H> hr;
         array<array<int64_t, H - 1>, W> vr;
-        tie(hr, vr) = predictor.get();
+        bool is_m1 = predictor1.get_loss() < predictor2.get_loss();
+        tie(hr, vr) = (is_m1 ? predictor1.get() : predictor2.get());
 
         // solve
         path = solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
@@ -363,8 +506,18 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
 #endif  // VERBOSE
 
         // update
-        predictor.add(path, score);
-        predictor.update(gen, clock_begin + (clock_end - clock_begin) * (query + 1) / K);
+        predictor1.add(path, score);
+        predictor2.add(path, score);
+        if (query < K / 3) {
+            predictor1.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 1) / (2 * K));
+            predictor2.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 2) / (2 * K));
+        } else {
+            if (is_m1) {
+                predictor1.update(gen, clock_begin + (clock_end - clock_begin) * (query + 1) / K);
+            } else {
+                predictor2.update(gen, clock_begin + (clock_end - clock_begin) * (query + 1) / K);
+            }
+        }
     }
 }
 
