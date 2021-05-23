@@ -101,6 +101,9 @@ vector<pair<int, int>> solve_with_dijkstra(int sy, int sx, int ty, int tx, const
     assert (y == sy);
     assert (x == sx);
     reverse(ALL(path));
+    assert (path.front() == make_pair(sy, sx));
+    assert (path.back() == make_pair(ty, tx));
+    assert ((set<pair<int, int>>(ALL(path)).size() == path.size()));
     return path;
 }
 
