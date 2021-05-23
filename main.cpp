@@ -58,6 +58,96 @@ string get_command_from_path(const vector<pair<int, int>>& path) {
 const int DY[4] = {-1, 1, 0, 0};
 const int DX[4] = {0, 0, 1, -1};
 
+template <class RandomEngine>
+vector<pair<int, int>> solve_with_random_snake(int sy, int sx, int ty, int tx, RandomEngine& gen) {
+    assert (sy <= ty);
+    assert (sx <= tx);
+
+    array<array<bool, W - 1>, H> hr = {};
+    array<array<bool, H - 1>, W> vr = {};
+    int count = 0;
+    REP3 (x, sx, tx) {
+        hr[sy][x] = true;
+        count += 1;
+    }
+    REP3 (y, sy, ty) {
+        vr[tx][y] = true;
+        count += 1;
+    }
+    auto is_visited = [&](int y, int x) -> bool {
+        return (x < W - 1 and hr[y][x]) or (x - 1 >= 0 and hr[y][x - 1]) or (y < H - 1 and vr[x][y]) or (y - 1 >= 0 and vr[x][y - 1]);
+    };
+    REP (iteration, 100000) {
+        int y = uniform_int_distribution<int>(0, H - 2)(gen);
+        int x = uniform_int_distribution<int>(0, W - 2)(gen);
+        bool& hr1 = hr[y][x];
+        bool& hr2 = hr[y + 1][x];
+        bool& vr1 = vr[x][y];
+        bool& vr2 = vr[x + 1][y];
+
+        int ke = hr1 + hr2 + vr1 + vr2;
+        int kv = is_visited(y, x) + is_visited(y, x + 1) + is_visited(y + 1, x) + is_visited(y + 1, x + 1);
+        bool ok = false;
+        if (ke == 0) {
+            // nop
+        } else if (ke == 1) {
+            if (kv == 2) {
+                ok = true;
+            }
+        } else if (ke == 2) {
+            if (hr1 != hr2 and vr1 != vr2) {
+                if (kv == 3) {
+                    ok = true;
+                }
+            }
+        } else if (ke == 3) {
+            ok = true;
+        } else if (ke == 4) {
+            // nop
+        } else {
+            assert (false);
+        }
+
+        if (ok) {
+            hr1 = not hr1;
+            hr2 = not hr2;
+            vr1 = not vr1;
+            vr2 = not vr2;
+
+            count -= ke;
+            count += 4 - ke;
+        }
+        if (count >= 4 * H) {
+            break;
+        }
+    }
+
+    vector<pair<int, int>> path;
+    int y = sy;
+    int x = sx;
+    path.emplace_back(y, x);
+    while (not (y == ty and x == tx)) {
+        if (x < W - 1 and hr[y][x]) {
+            hr[y][x] = false;
+            x += 1;
+        } else if (x - 1 >= 0 and hr[y][x - 1]) {
+            hr[y][x - 1] = false;
+            x -= 1;
+        } else if (y < H - 1 and vr[x][y]) {
+            vr[x][y] = false;
+            y += 1;
+        } else if (y - 1 >= 0 and vr[x][y - 1]) {
+            vr[x][y - 1] = false;
+            y -= 1;
+        } else {
+            assert (false);
+        }
+        path.emplace_back(y, x);
+    }
+    assert (path.size() == count + 1);
+    return path;
+}
+
 vector<pair<int, int>> solve_with_dijkstra(int sy, int sx, int ty, int tx, const array<array<int64_t, W - 1>, H>& hr, const array<array<int64_t, H - 1>, W>& vr) {
     reversed_priority_queue<tuple<int64_t, int, int>> que;
     array<array<double, W>, H> dist;
