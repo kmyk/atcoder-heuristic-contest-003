@@ -75,7 +75,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int)
     parser.add_argument('-M', choices=(1, 2), type=int, default=random.randint(1, 2))
-    parser.add_argument('-D', choices=range(100, 2000 + 1), type=int, default=random.randint(100, 2000))
+    parser.add_argument('-D', choices=range(0, 2000 + 1), type=int, default=random.randint(100, 2000))
+    parser.add_argument('-e', type=float, default=0.1)
     args = parser.parse_args()
     basicConfig(level=DEBUG)
 
@@ -105,7 +106,7 @@ def main() -> None:
             if abs(ty - sy) + abs(tx - sx) >= 10:
                 break
         a = dijkstra(hr, vr, sy, sx, ty, tx)
-        e = 0.9 + 0.2 * random.random()
+        e = 1.0 + 2 * (0.5 - random.random()) * args.e
         print(sy, sx, ty, tx, a, e)
 
 
