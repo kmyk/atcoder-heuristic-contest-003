@@ -124,10 +124,43 @@ int64_t calculate_score(const vector<pair<int, int>>& path, const array<array<in
     return score;
 }
 
-class base_predictor_m1 {
+struct row_col_history {
     vector<int64_t> actual_score;
     array<vector<pair<int, int>>, H> used_row;
     array<vector<pair<int, int>>, W> used_col;
+
+    int size() const {
+        return actual_score.size();
+    }
+
+    void add(const vector<pair<int, int>>& path, int64_t score) {
+        assert (not path.empty());
+        int j = actual_score.size();
+        actual_score.push_back(score);
+
+        auto use = [&](vector<pair<int, int>>& used) {
+            if (used.empty() or used.back().first != j) {
+                used.emplace_back(j, 0);
+            }
+            used.back().second += 1;
+        };
+        REP (i, path.size() - 1) {
+            auto [ay, ax] = path[i];
+            auto [by, bx] = path[i + 1];
+            if (ay == by) {
+                use(used_row[ay]);
+            } else if (ax == bx) {
+                use(used_col[ax]);
+            } else {
+                assert (false);
+            }
+        }
+    }
+
+};
+
+class base_predictor_m1 {
+    row_col_history history;
 
     struct prediction_state {
         array<int64_t, H> row;
@@ -165,37 +198,18 @@ public:
     }
 
     int64_t get_loss() const {
-        return actual_score.empty() ? 0 : best.loss / actual_score.size();
+        return history.size() == 0 ? 0 : best.loss / history.size();
     }
 
     void add(const vector<pair<int, int>>& path, int64_t score) {
-        assert (not path.empty());
-        int j = actual_score.size();
-        actual_score.push_back(score);
-
-        auto use = [&](vector<pair<int, int>>& used) {
-            if (used.empty() or used.back().first != j) {
-                used.emplace_back(j, 0);
-            }
-            used.back().second += 1;
-        };
-        REP (i, path.size() - 1) {
-            auto [ay, ax] = path[i];
-            auto [by, bx] = path[i + 1];
-            if (ay == by) {
-                use(used_row[ay]);
-            } else if (ax == bx) {
-                use(used_col[ax]);
-            } else {
-                assert (false);
-            }
-        }
+        history.add(path, score);
 
         REP (i, 2) {
             auto& state = (i == 0 ? cur : best);
             auto [hr, vr] = get(state);
-            state.predicted_score.push_back(calculate_score(path, hr, vr));
-            state.loss += abs(state.predicted_score[j] - actual_score[j]);
+            int64_t predicted_score = calculate_score(path, hr, vr);
+            state.predicted_score.push_back(predicted_score);
+            state.loss += abs(predicted_score - score);
         }
     }
 
@@ -232,21 +246,21 @@ public:
             } else if (VALUE_MAX < value + d) {
                 d = VALUE_MAX - value;
             }
-            auto& used = (is_row ? used_row : used_col)[z];
+            auto& used = (is_row ? history.used_row : history.used_col)[z];
 
             int64_t delta = 0;
             for (auto [j, cnt] : used) {
-                delta -= abs(cur.predicted_score[j] - actual_score[j]);
-                delta += abs(cur.predicted_score[j] + cnt * d - actual_score[j]);
+                delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                delta += abs(cur.predicted_score[j] + cnt * d - history.actual_score[j]);
             }
 
             if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
                 // accept
                 value += d;
                 for (auto [j, cnt] : used) {
-                    cur.loss -= abs(cur.predicted_score[j] - actual_score[j]);
+                    cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
                     cur.predicted_score[j] += cnt * d;
-                    cur.loss += abs(cur.predicted_score[j] - actual_score[j]);
+                    cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
                 }
             }
 
@@ -256,15 +270,41 @@ public:
         }
 
 #ifdef VERBOSE
-        cerr << "M1: iteration = " << iteration << ", loss = " << (actual_score.empty() ? -1 : best.loss / actual_score.size()) << endl;
+        cerr << "M1: iteration = " << iteration << ", loss = " << (history.size() == 0 ? -1 : best.loss / history.size()) << endl;
 #endif  // VERBOSE
     }
 };
 
-class base_predictor_m2 {
+struct hr_vr_history {
     vector<int64_t> actual_score;
     array<array<vector<int>, W - 1>, H> used_hr;
     array<array<vector<int>, H - 1>, W> used_vr;
+
+    int size() const {
+        return actual_score.size();
+    }
+
+    void add(const vector<pair<int, int>>& path, int64_t score) {
+        assert (not path.empty());
+        int j = actual_score.size();
+        actual_score.push_back(score);
+
+        REP (i, path.size() - 1) {
+            auto [ay, ax] = path[i];
+            auto [by, bx] = path[i + 1];
+            if (ay == by) {
+                used_hr[ay][min(ax, bx)].push_back(j);
+            } else if (ax == bx) {
+                used_vr[ax][min(ay, by)].push_back(j);
+            } else {
+                assert (false);
+            }
+        }
+    }
+};
+
+class base_predictor_m2 {
+    hr_vr_history history;
 
     struct prediction_state {
         array<int, H> sep_x;
@@ -312,31 +352,18 @@ public:
     }
 
     int64_t get_loss() const {
-        return actual_score.empty() ? 0 : best.loss / actual_score.size();
+        return history.size() == 0 ? 0 : best.loss / history.size();
     }
 
     void add(const vector<pair<int, int>>& path, int64_t score) {
-        assert (not path.empty());
-        int j = actual_score.size();
-        actual_score.push_back(score);
-
-        REP (i, path.size() - 1) {
-            auto [ay, ax] = path[i];
-            auto [by, bx] = path[i + 1];
-            if (ay == by) {
-                used_hr[ay][min(ax, bx)].push_back(j);
-            } else if (ax == bx) {
-                used_vr[ax][min(ay, by)].push_back(j);
-            } else {
-                assert (false);
-            }
-        }
+        history.add(path, score);
 
         REP (i, 2) {
             auto& state = (i == 0 ? cur : best);
             auto [hr, vr] = get(state);
-            state.predicted_score.push_back(calculate_score(path, hr, vr));
-            state.loss += abs(state.predicted_score[j] - actual_score[j]);
+            int64_t predicted_score = calculate_score(path, hr, vr);
+            state.predicted_score.push_back(predicted_score);
+            state.loss += abs(predicted_score - score);
         }
     }
 
@@ -387,13 +414,13 @@ public:
                 } else {
                     assert (false);
                 }
-                auto& used = (i < 2 ? used_hr : used_vr)[z];
+                auto& used = (i < 2 ? history.used_hr : history.used_vr)[z];
 
                 int64_t delta = 0;
                 REP3 (w, l, r) {
                     for (int j : used[w]) {
-                        delta -= abs(cur.predicted_score[j] - actual_score[j]);
-                        delta += abs(cur.predicted_score[j] + d - actual_score[j]);
+                        delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                        delta += abs(cur.predicted_score[j] + d - history.actual_score[j]);
                     }
                 }
 
@@ -402,9 +429,9 @@ public:
                     value += d;
                     REP3 (w, l, r) {
                         for (int j : used[w]) {
-                            cur.loss -= abs(cur.predicted_score[j] - actual_score[j]);
+                            cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
                             cur.predicted_score[j] += d;
-                            cur.loss += abs(cur.predicted_score[j] - actual_score[j]);
+                            cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
                         }
                     }
                 }
@@ -419,20 +446,20 @@ public:
                     if (sep + d < 0 or sep + d > W - 1) {
                         break;
                     }
-                    auto& used = (is_row ? used_hr : used_vr)[z];
+                    auto& used = (is_row ? history.used_hr : history.used_vr)[z];
                     auto& value1 = (is_row ? cur.row1 : cur.col1)[z];
                     auto& value2 = (is_row ? cur.row2 : cur.col2)[z];
 
                     int64_t delta = 0;
                     if (d == -1) {
                         for (int j : used[sep - 1]) {
-                            delta -= abs(cur.predicted_score[j] - actual_score[j]);
-                            delta += abs(cur.predicted_score[j] - value1 + value2 - actual_score[j]);
+                            delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                            delta += abs(cur.predicted_score[j] - value1 + value2 - history.actual_score[j]);
                         }
                     } else if (d == 1) {
                         for (int j : used[sep]) {
-                            delta -= abs(cur.predicted_score[j] - actual_score[j]);
-                            delta += abs(cur.predicted_score[j] - value2 + value1 - actual_score[j]);
+                            delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                            delta += abs(cur.predicted_score[j] - value2 + value1 - history.actual_score[j]);
                         }
                     } else {
                         assert (false);
@@ -442,16 +469,16 @@ public:
                         // accept
                         if (d == -1) {
                             for (int j : used[sep - 1]) {
-                                cur.loss -= abs(cur.predicted_score[j] - actual_score[j]);
+                                cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
                                 cur.predicted_score[j] += - value1 + value2;
-                                cur.loss += abs(cur.predicted_score[j] - actual_score[j]);
+                                cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
                             }
                             sep -= 1;
                         } else if (d == 1) {
                             for (int j : used[sep]) {
-                                cur.loss -= abs(cur.predicted_score[j] - actual_score[j]);
+                                cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
                                 cur.predicted_score[j] += - value2 + value1;
-                                cur.loss += abs(cur.predicted_score[j] - actual_score[j]);
+                                cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
                             }
                             sep += 1;
                         } else {
@@ -472,7 +499,7 @@ public:
         }
 
 #ifdef VERBOSE
-        cerr << "M2: iteration = " << iteration << ", loss = " << (actual_score.empty() ? -1 : best.loss / actual_score.size()) << endl;
+        cerr << "M2: iteration = " << iteration << ", loss = " << (history.size() == 0 ? -1 : best.loss / history.size()) << endl;
 #endif  // VERBOSE
     }
 };
