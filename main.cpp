@@ -626,7 +626,6 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
 #endif  // VERBOSE
 
         // update
-        chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
         predictor.add(path, score);
         predictor.update(gen, clock_begin + (clock_end - clock_begin) * (query + 1) / K);
     }
