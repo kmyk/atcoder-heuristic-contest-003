@@ -1,9 +1,9 @@
-name: measure
+name: evaluate
 
 on: [push, pull_request]
 
 jobs:
-  measure:
+  evaluate:
     runs-on: ubuntu-latest
 
     strategy:
