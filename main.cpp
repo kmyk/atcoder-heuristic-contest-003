@@ -454,55 +454,49 @@ public:
                 int z = uniform_int_distribution<int>(0, H - 1)(gen);
                 int d = (bernoulli_distribution(0.5)(gen) ? 1 : -1);
 
-                while (true) {
-                    auto& sep = (is_row ? cur.sep_x : cur.sep_y)[z];
-                    if (sep + d < 1 or sep + d > W - 2) {
-                        break;
-                    }
-                    auto& used = (is_row ? history.used_hr : history.used_vr)[z];
-                    auto& value1 = (is_row ? cur.row1 : cur.col1)[z];
-                    auto& value2 = (is_row ? cur.row2 : cur.col2)[z];
+                auto& sep = (is_row ? cur.sep_x : cur.sep_y)[z];
+                if (sep + d < 1 or sep + d > W - 2) {
+                    continue;
+                }
+                auto& used = (is_row ? history.used_hr : history.used_vr)[z];
+                auto& value1 = (is_row ? cur.row1 : cur.col1)[z];
+                auto& value2 = (is_row ? cur.row2 : cur.col2)[z];
 
-                    int64_t delta = 0;
+                int64_t delta = 0;
+                if (d == -1) {
+                    for (int j : used[sep - 1]) {
+                        delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                        delta += abs(cur.predicted_score[j] - value1 + value2 - history.actual_score[j]);
+                    }
+                } else if (d == 1) {
+                    for (int j : used[sep]) {
+                        delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                        delta += abs(cur.predicted_score[j] - value2 + value1 - history.actual_score[j]);
+                    }
+                } else {
+                    assert (false);
+                }
+
+                if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
+                    // accept
                     if (d == -1) {
                         for (int j : used[sep - 1]) {
-                            delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                            delta += abs(cur.predicted_score[j] - value1 + value2 - history.actual_score[j]);
+                            cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                            cur.predicted_score[j] += - value1 + value2;
+                            cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
                         }
+                        sep -= 1;
                     } else if (d == 1) {
                         for (int j : used[sep]) {
-                            delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                            delta += abs(cur.predicted_score[j] - value2 + value1 - history.actual_score[j]);
+                            cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                            cur.predicted_score[j] += - value2 + value1;
+                            cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
                         }
+                        sep += 1;
                     } else {
                         assert (false);
                     }
-
-                    if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
-                        // accept
-                        if (d == -1) {
-                            for (int j : used[sep - 1]) {
-                                cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                                cur.predicted_score[j] += - value1 + value2;
-                                cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
-                            }
-                            sep -= 1;
-                        } else if (d == 1) {
-                            for (int j : used[sep]) {
-                                cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                                cur.predicted_score[j] += - value2 + value1;
-                                cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
-                            }
-                            sep += 1;
-                        } else {
-                            assert (false);
-                        }
-                        assert (0 <= sep and sep <= H - 1);
-
-                    } else {
-                        // reject
-                        break;
-                    }
+                    assert (0 <= sep and sep <= H - 1);
                 }
             }
 
