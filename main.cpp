@@ -442,7 +442,7 @@ public:
 
                 while (true) {
                     auto& sep = (is_row ? cur.sep_x : cur.sep_y)[z];
-                    if (sep + d < 0 or sep + d > W - 1) {
+                    if (sep + d < 1 or sep + d > W - 2) {
                         break;
                     }
                     auto& used = (is_row ? history.used_hr : history.used_vr)[z];
