@@ -552,11 +552,7 @@ public:
         }
 
 #ifdef VERBOSE
-        int64_t loss = 0;
-        REP (j, predicted_score.size()) {
-            loss += abs(predicted_score[j] - actual_score[j]);
-        }
-        cerr << "loss = " << loss / (predicted_score.size() + 1) << endl;
+        cerr << "loss = " << (actual_score.empty() ? -1 : best.loss / actual_score.size()) << endl;
 #endif  // VERBOSE
     }
 };
