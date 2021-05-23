@@ -445,6 +445,8 @@ class base_predictor {
         array<int, W> sep_y;
         array<int64_t, H> row1, row2;
         array<int64_t, W> col1, col2;
+        array<array<int64_t, W - 1>, H> dhr;
+        array<array<int64_t, H - 1>, W> dvr;
         vector<int64_t> predicted_score;
         int64_t loss;
     };
@@ -457,12 +459,12 @@ class base_predictor {
         array<array<int64_t, H - 1>, W> vr;
         REP (y, H) {
             REP (x, W - 1) {
-                hr[y][x] = (x < state.sep_x[y] ? state.row1 : state.row2)[y];
+                hr[y][x] = (x < state.sep_x[y] ? state.row1 : state.row2)[y] + state.dhr[y][x];
             }
         }
         REP (x, W) {
             REP (y, H - 1) {
-                vr[x][y] = (y < state.sep_y[x] ? state.col1 : state.col2)[x];
+                vr[x][y] = (y < state.sep_y[x] ? state.col1 : state.col2)[x] + state.dvr[x][y];
             }
         }
         return {hr, vr};
@@ -476,6 +478,12 @@ public:
         fill(ALL(cur.row2), 5000);
         fill(ALL(cur.col1), 5000);
         fill(ALL(cur.col2), 5000);
+        REP (y, H) {
+            fill(ALL(cur.dhr[y]), 0);
+        }
+        REP (x, W) {
+            fill(ALL(cur.dvr[x]), 0);
+        }
         cur.loss = 0;
 
         best = cur;
@@ -525,20 +533,26 @@ public:
                 temprature = (clock_end - clock_now) / (clock_end - clock_begin);
             }
 
+            constexpr int VALUE_MIN = 1000;
+            constexpr int VALUE_MAX = 9000;
+            constexpr int D = 10;
+
             auto probability = [&](int64_t delta) -> double {
                 constexpr double boltzmann = 0.0001;
                 return exp(- boltzmann * delta / temprature);
             };
-            if (bernoulli_distribution(0.8)(gen)) {
+
+            double choice = uniform_real_distribution<double>()(gen);
+            if (choice < 0.8) {
                 int i = uniform_int_distribution<int>(0, 4 - 1)(gen);
                 int z = uniform_int_distribution<int>(0, H - 1)(gen);
                 int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
 
                 auto& value = (i == 0 ? cur.row1 : i == 1 ? cur.row2 : i == 2 ? cur.col1 : cur.col2)[z];
-                if (value + d < 1000) {
-                    d = 1000 - value;
-                } else if (9000 < value + d) {
-                    d = 9000 - value;
+                if (value + d < VALUE_MIN + D) {
+                    d = VALUE_MIN + D - value;
+                } else if (VALUE_MAX - D < value + d) {
+                    d = VALUE_MAX - D - value;
                 }
                 int l = 0;
                 int r = H - 1;
@@ -579,6 +593,41 @@ public:
                         }
                     }
                 }
+
+            } else if (choice < 0.9) {
+                bool is_row = bernoulli_distribution(0.5)(gen);
+                int z1 = uniform_int_distribution<int>(0, H - 1)(gen);
+                int z2 = uniform_int_distribution<int>(0, W - 2)(gen);
+                int64_t d = uniform_int_distribution<int>(-10, 10)(gen);
+
+                auto& value = (is_row ? cur.dhr : cur.dvr)[z1][z2];
+                if (value + d < - D) {
+                    d = - D - value;
+                } else if (D < value + d) {
+                    d = D - value;
+                }
+                auto& used = (is_row ? used_hr : used_vr)[z1][z2];
+                if (used.empty()) {
+                    continue;
+                }
+
+                int64_t delta = 0;
+                for (int j : used) {
+                    delta -= abs(cur.predicted_score[j] - actual_score[j]);
+                    delta += abs(cur.predicted_score[j] + d - actual_score[j]);
+                }
+                if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
+                    // accept
+#ifdef VERBOSE
+                    if (delta > 0) {
+                        cerr << "bad move " << probability(delta) << endl;
+                    }
+#endif  // VERBOSE
+                    for (int j : used) {
+                        cur.predicted_score[j] += d;
+                    }
+                }
+
 
             } else {
                 bool is_row = bernoulli_distribution(0.5)(gen);
