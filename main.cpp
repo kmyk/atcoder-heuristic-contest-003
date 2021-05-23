@@ -165,7 +165,7 @@ public:
     }
 
     int64_t get_loss() const {
-        return best.loss;
+        return actual_score.empty() ? 0 : best.loss / actual_score.size();
     }
 
     void add(const vector<pair<int, int>>& path, int64_t score) {
@@ -312,7 +312,7 @@ public:
     }
 
     int64_t get_loss() const {
-        return best.loss;
+        return actual_score.empty() ? 0 : best.loss / actual_score.size();
     }
 
     void add(const vector<pair<int, int>>& path, int64_t score) {
@@ -489,35 +489,27 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         // input
         int sy, sx, ty, tx;
         tie(sy, sx, ty, tx) = read();
-        vector<pair<int, int>> path;
-        array<array<int64_t, W - 1>, H> hr;
-        array<array<int64_t, H - 1>, W> vr;
-        bool is_m1 = predictor1.get_loss() < predictor2.get_loss();
-        tie(hr, vr) = (is_m1 ? predictor1.get() : predictor2.get());
 
         // solve
-        path = solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
+        bool is_m1 = (predictor1.get_loss() < predictor2.get_loss() + 1000);
+        auto [hr, vr] = (is_m1 ? predictor1.get() : predictor2.get());
+        vector<pair<int, int>> path = solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
 
         // output
         int64_t score = write(get_command_from_path(path));
         history.emplace_back(path, score);
-#ifdef VERBOSE
-        cerr << "(" << sy << ", " << sx << ") -> (" << ty << ", " << tx << "): " << score << endl;
-#endif  // VERBOSE
 
         // update
         predictor1.add(path, score);
         predictor2.add(path, score);
-        if (query < K / 3) {
-            predictor1.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 1) / (2 * K));
-            predictor2.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 2) / (2 * K));
-        } else {
-            if (is_m1) {
-                predictor1.update(gen, clock_begin + (clock_end - clock_begin) * (query + 1) / K);
-            } else {
-                predictor2.update(gen, clock_begin + (clock_end - clock_begin) * (query + 1) / K);
-            }
-        }
+        predictor1.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 1) / (2 * K));
+        predictor2.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 2) / (2 * K));
+
+#ifdef VERBOSE
+        auto [hr1, vr1] = predictor1.get();
+        auto [hr2, vr2] = predictor2.get();
+        cerr << "use M" << (is_m1 ? 1 : 2) << ": (" << sy << ", " << sx << ") -> (" << ty << ", " << tx << "): " << score << " (M1 " << calculate_score(path, hr1, vr1) - score << ", M2 " << calculate_score(path, hr2, vr2) - score<< ")" << endl;
+#endif  // VERBOSE
     }
 }
 
