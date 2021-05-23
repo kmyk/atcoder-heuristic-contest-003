@@ -508,7 +508,7 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
 #ifdef VERBOSE
         auto [hr1, vr1] = predictor1.get();
         auto [hr2, vr2] = predictor2.get();
-        cerr << "use M" << (is_m1 ? 1 : 2) << ": (" << sy << ", " << sx << ") -> (" << ty << ", " << tx << "): " << score << " (M1 " << calculate_score(path, hr1, vr1) - score << ", M2 " << calculate_score(path, hr2, vr2) - score<< ")" << endl;
+        cerr << "use M" << (is_m1 ? 1 : 2) << " (M1 " << (calculate_score(path, hr1, vr1) - score) / static_cast<int>(path.size()) << ", M2 " << (calculate_score(path, hr2, vr2) - score) / static_cast<int>(path.size()) << ")" << endl;
 #endif  // VERBOSE
     }
 }
