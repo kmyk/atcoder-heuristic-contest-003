@@ -225,7 +225,7 @@ public:
         int iteration = 0;
         double temprature = 1.0;
         for (; ; ++ iteration) {
-            if (iteration >= 1024 and iteration % 128 == 0) {
+            if (iteration % 32 == 0) {
                 chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
                 if (clock_now >= clock_end) {
                     break;
@@ -391,7 +391,7 @@ public:
         int iteration = 0;
         double temprature = 1.0;
         for (; ; ++ iteration) {
-            if (iteration >= 1024 and iteration % 128 == 0) {
+            if (iteration % 32 == 0) {
                 chrono::high_resolution_clock::time_point clock_now = chrono::high_resolution_clock::now();
                 if (clock_now >= clock_end) {
                     break;
