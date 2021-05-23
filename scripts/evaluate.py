@@ -1,3 +1,18 @@
+"""
+scripts/measure.py
+
+A script to measure the efficacy of solutions rapidly.
+"""
+
+__author__ = "Kimiyuki Onaka"
+__copyright__ = "Copyright (c) 2021 Kimiyuki Onaka"
+__credits__ = []  # type: List[str]
+__license__ = "MIT"
+__version__ = "1.2.0"
+__maintainer__ = "Kimiyuki Onaka"
+__email__ = "kimiyuki95@gmail.com"
+__status__ = "Production"
+
 import argparse
 import concurrent.futures
 import math
@@ -11,35 +26,30 @@ from typing import *
 logger = getLogger(__name__)
 
 
-def gen(*, M: Optional[int], D: Optional[int], input_path: pathlib.Path) -> None:
+def gen(*, seeds: List[int]) -> None:
     logger.info('running the generator...')
-    with open(input_path, 'w') as fh:
-        command = [sys.executable, str(pathlib.Path('scripts', 'generate.py'))]
-        if M is not None:
-            command.append('-M')
-            command.append(str(M))
-        if D is not None:
-            command.append('-D')
-            command.append(str(D))
-        subprocess.check_call(command, stdout=fh)
+    with open('seeds.txt', 'w') as fh:
+        for seed in seeds:
+            print(seed, file=fh)
+    subprocess.check_call(['cargo', 'run', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'gen', 'seeds.txt'])
 
 
-def run(*, command: str, input_path: pathlib.Path, output_path: pathlib.Path) -> None:
-    logger.info('running the command for %s...', str(input_path))
+def run(*, command: str, input_path: pathlib.Path, output_path: pathlib.Path, seed: int) -> None:
+    logger.info('running the command for seed %d...', seed)
     try:
         with open(output_path, 'w') as fh:
             subprocess.check_call([str((pathlib.Path.cwd() / 'tools' / 'target' / 'release' / 'tester').resolve()), str(input_path), command], stdout=fh)
     except subprocess.SubprocessError:
-        logger.exception('failed for input = %s', str(input_path))
+        logger.exception('failed for seed = %d', seed)
 
 
-def vis(*, input_path: pathlib.Path, output_path: pathlib.Path, vis_path: pathlib.Path) -> int:
-    logger.info('running the visualizer for %s...', str(input_path))
+def vis(*, input_path: pathlib.Path, output_path: pathlib.Path, vis_path: pathlib.Path, seed: int) -> int:
+    logger.info('running the visualizer for seed %d...', seed)
     try:
         command = [str((pathlib.Path.cwd() / 'tools' / 'target' / 'release' / 'vis').resolve()), str(input_path), str(output_path)]
         score_bytes = subprocess.check_output(command)
     except subprocess.SubprocessError:
-        logger.exception('failed for input = %s', str(input_path))
+        logger.exception('failed for seed = %d', seed)
         return 0
     os.rename('out.svg', vis_path)
     if not score_bytes.startswith(b'Score = '):
@@ -52,8 +62,8 @@ def main() -> 'NoReturn':
     parser.add_argument('-c', '--command', default='./a.out')
     parser.add_argument('-n', '--count', type=int, default=50)
     parser.add_argument('-j', '--jobs', type=int, default=2)
-    parser.add_argument('-D', type=int)
-    parser.add_argument('-M', type=int)
+    parser.add_argument('--same', action='store_true')
+    parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
 
     basicConfig(level=DEBUG)
@@ -63,34 +73,41 @@ def main() -> 'NoReturn':
         sys.exit(1)
 
     # gen
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
-        for i in range(args.count):
-            input_path = pathlib.Path('in', '%04d.txt' % i)
-            executor.submit(gen, M=args.M, D=args.D, input_path=input_path)
+    if args.same:
+        seeds = [args.seed for i in range(args.count)]
+    else:
+        seeds = [args.seed + i for i in range(args.count)]
+    gen(seeds=seeds)
 
     # run
     pathlib.Path('out').mkdir(exist_ok=True)
     command = ['cargo', 'build', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'tester']
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
-        for i in range(args.count):
+        for i, seed in enumerate(seeds):
             input_path = pathlib.Path('in', '%04d.txt' % i)
             output_path = pathlib.Path('out', '%04d.txt' % i)
-            executor.submit(run, command=args.command, input_path=input_path, output_path=output_path)
+            executor.submit(run, command=args.command, input_path=input_path, output_path=output_path, seed=seed)
 
     # vis
     pathlib.Path('vis').mkdir(exist_ok=True)
     scores: List[int] = []
     command = ['cargo', 'build', '--manifest-path', str(pathlib.Path('tools', 'Cargo.toml')), '--release', '--bin', 'vis']
     subprocess.check_output(command)
-    for i in range(args.count):
+    for i, seed in enumerate(seeds):
         input_path = pathlib.Path('in', '%04d.txt' % i)
         output_path = pathlib.Path('out', '%04d.txt' % i)
         vis_path = pathlib.Path('vis', '%04d.svg' % i)
-        score = vis(input_path=input_path, output_path=output_path, vis_path=vis_path)
+        score = vis(input_path=input_path, output_path=output_path, vis_path=vis_path, seed=seed)
         scores.append(score)
-        logger.info('index = {}: score = {}'.format(i, score))
+        logger.info('seed = {}: score = {}'.format(seed, score))
     average = sum(scores) / len(scores)
-    logger.info('100 * average = %s', int(100 * average))
+    if args.same:
+        logger.info('average = %s', average)
+        logger.info('min = %s', min(scores))
+        logger.info('max = %s', max(scores))
+        logger.info('standard deviation = %s', math.sqrt(sum([(score - average)**2 for score in scores]) / len(scores)))
+    else:
+        logger.info('100 * average = %s', int(100 * average))
     if os.environ.get('GITHUB_ACTIONS') == 'true':
         print('::set-output name=average::{}'.format(int(100 * average)))
 
