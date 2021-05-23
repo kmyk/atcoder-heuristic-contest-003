@@ -63,6 +63,7 @@ def main() -> 'NoReturn':
         sys.exit(1)
 
     # gen
+    pathlib.Path('in').mkdir(exist_ok=True)
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
         for i in range(args.count):
             input_path = pathlib.Path('in', '%04d.txt' % i)
