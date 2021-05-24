@@ -19,7 +19,7 @@ def transpose(f: List[List[int]]) -> List[List[int]]:
     return [[f[y][x] for y in range(h)] for x in range(w)]
 
 
-def gen_m1(D: int, *, name: str) -> List[List[int]]:
+def gen_m1(D: int, *, name: str) -> Tuple[List[List[int]], List[int]]:
     row = [random.randint(1000 + D, 9000 - D) for _ in range(H)]
     logger.info('%s = %s', name, row)
 
@@ -27,10 +27,10 @@ def gen_m1(D: int, *, name: str) -> List[List[int]]:
     for y in range(H):
         for x in range(W - 1):
             hr[y][x] = row[y] + random.randint(-D, D)
-    return hr
+    return hr, row
 
 
-def gen_m2(D: int, *, name: str) -> List[List[int]]:
+def gen_m2(D: int, *, name: str) -> Tuple[List[List[int]], List[int], List[int], List[int]]:
     row1 = [random.randint(1000 + D, 9000 - D) for _ in range(H)]
     row2 = [random.randint(1000 + D, 9000 - D) for _ in range(H)]
     sep = [random.randint(1, W - 2) for _ in range(H)]
@@ -42,7 +42,7 @@ def gen_m2(D: int, *, name: str) -> List[List[int]]:
     for y in range(H):
         for x in range(W - 1):
             hr[y][x] = (row1 if x < sep[y] else row2)[y] + random.randint(-D, D)
-    return hr
+    return hr, row1, row2, sep
 
 
 def dijkstra(hr: List[List[int]], vr: List[List[int]], sy: int, sx: int, ty: int, tx: int) -> int:
@@ -71,6 +71,14 @@ def dijkstra(hr: List[List[int]], vr: List[List[int]], sy: int, sx: int, ty: int
     return dist[ty][tx]
 
 
+def optimal(hr: List[List[int]], vr: List[List[int]], queries: List[Tuple[int, int, int, int, int, float]], *, name: str) -> None:
+    score = 0.0
+    for k, (sy, sx, ty, tx, a, _) in enumerate(queries):
+        b = dijkstra(hr, vr, sy, sx, ty, tx)
+        score += 0.998**(K - k - 1) * a / b
+    logger.info('optimal %s = %s', name, int(2312311 * score))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int)
@@ -87,16 +95,19 @@ def main() -> None:
     logger.info('M = %s', args.M)
     logger.info('D = %s', args.D)
     if args.M == 1:
-        hr = gen_m1(D=args.D, name='row')
-        vr = transpose(gen_m1(D=args.D, name='col'))
+        hr, row = gen_m1(D=args.D, name='row')
+        vr, col = gen_m1(D=args.D, name='col')
+        vr = transpose(vr)
     elif args.M == 2:
-        hr = gen_m2(D=args.D, name='row')
-        vr = transpose(gen_m2(D=args.D, name='col'))
+        hr, row1, row2, sep_x = gen_m2(D=args.D, name='row')
+        vr, col1, col2, sep_y = gen_m2(D=args.D, name='col')
+        vr = transpose(vr)
     for y in range(H):
         print(*hr[y])
     for y in range(H - 1):
         print(*vr[y])
 
+    queries: List[Tuple[int, int, int, int, int, float]] = []
     for _ in range(K):
         while True:
             sy = random.randint(0, H - 1)
@@ -108,6 +119,17 @@ def main() -> None:
         a = dijkstra(hr, vr, sy, sx, ty, tx)
         e = 1.0 + 2 * (0.5 - random.random()) * args.e
         print(sy, sx, ty, tx, a, e)
+        queries.append((sy, sx, ty, tx, a, e))
+
+    row_average = [sum([hr[y][x] for x in range(W - 1)]) // (W - 1) for y in range(H)]
+    col_average = [sum([vr[y][x] for y in range(H - 1)]) // (H - 1) for x in range(W)]
+    hr_average = [[row_average[y] for _ in range(W - 1)] for y in range(H)]
+    vr_average = [[col_average[x] for x in range(W)] for _ in range(H - 1)]
+    optimal(hr_average, vr_average, queries, name='average')
+    if args.M == 2:
+        hr_avg_sep = [[(row1 if x < sep_x[y] else row2)[y] for x in range(W - 1)] for y in range(H)]
+        vr_avg_sep = [[(col1 if y < sep_y[x] else col2)[x] for x in range(W)] for y in range(H - 1)]
+        optimal(hr_avg_sep, vr_avg_sep, queries, name='avg sep')
 
 
 if __name__ == '__main__':
