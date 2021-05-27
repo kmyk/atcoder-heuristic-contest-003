@@ -51,7 +51,7 @@ def main() -> 'NoReturn':
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--command', default='./a.out')
     parser.add_argument('-n', '--count', type=int, default=50)
-    parser.add_argument('-j', '--jobs', type=int, default=2)
+    parser.add_argument('-j', '--jobs', type=int, default=os.cpu_count())
     parser.add_argument('-D', type=int)
     parser.add_argument('-M', type=int)
     args = parser.parse_args()

@@ -61,7 +61,7 @@ def main() -> 'NoReturn':
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--command', default='./a.out')
     parser.add_argument('-n', '--count', type=int, default=50)
-    parser.add_argument('-j', '--jobs', type=int, default=2)
+    parser.add_argument('-j', '--jobs', type=int, default=os.cpu_count())
     parser.add_argument('--same', action='store_true')
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
