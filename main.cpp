@@ -238,37 +238,45 @@ public:
                 return exp(- boltzmann * delta / temprature);
             };
 
+            auto try_update_row = [&](bool is_row, int z, int64_t d) -> bool {
+                auto& value = (is_row ? cur.row : cur.col)[z];
+                if (value + d < VALUE_MIN) {
+                    d = VALUE_MIN - value;
+                } else if (VALUE_MAX < value + d) {
+                    d = VALUE_MAX - value;
+                }
+                if (d == 0) {
+                    return false;
+                }
+                auto& used = (is_row ? history.used_row : history.used_col)[z];
+
+                int64_t delta = 0;
+                for (auto [j, cnt] : used) {
+                    delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                    delta += abs(cur.predicted_score[j] + cnt * d - history.actual_score[j]);
+                }
+
+                if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
+                    // accept
+                    cur.loss += delta;
+                    value += d;
+                    for (auto [j, cnt] : used) {
+                        cur.predicted_score[j] += cnt * d;
+                    }
+                    if (cur.loss < best.loss) {
+                        best = cur;
+                    }
+                    return true;
+
+                } else {
+                    return false;
+                }
+            };
+
             bool is_row = bernoulli_distribution(0.5)(gen);
             int z = uniform_int_distribution<int>(0, H - 1)(gen);
             int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
-
-            auto& value = (is_row ? cur.row : cur.col)[z];
-            if (value + d < VALUE_MIN) {
-                d = VALUE_MIN - value;
-            } else if (VALUE_MAX < value + d) {
-                d = VALUE_MAX - value;
-            }
-            auto& used = (is_row ? history.used_row : history.used_col)[z];
-
-            int64_t delta = 0;
-            for (auto [j, cnt] : used) {
-                delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                delta += abs(cur.predicted_score[j] + cnt * d - history.actual_score[j]);
-            }
-
-            if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
-                // accept
-                value += d;
-                for (auto [j, cnt] : used) {
-                    cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                    cur.predicted_score[j] += cnt * d;
-                    cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
-                }
-            }
-
-            if (cur.loss < best.loss) {
-                best = cur;
-            }
+            try_update_row(is_row, z, d);
         }
 
 #ifdef VERBOSE
@@ -404,10 +412,8 @@ public:
                 return exp(- boltzmann * delta / temprature);
             };
 
-            if (bernoulli_distribution(0.90)(gen)) {
-                int i = uniform_int_distribution<int>(0, 4 - 1)(gen);
-                int z = uniform_int_distribution<int>(0, H - 1)(gen);
-                int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
+            auto try_update_row = [&](int i, int z, int64_t d) -> bool {
+                assert (0 <= i and i < 4);
 
                 auto& value = (i == 0 ? cur.row1 : i == 1 ? cur.row2 : i == 2 ? cur.col1 : cur.col2)[z];
                 if (value + d < VALUE_MIN) {
@@ -415,6 +421,10 @@ public:
                 } else if (VALUE_MAX < value + d) {
                     d = VALUE_MAX - value;
                 }
+                if (d == 0) {
+                    return false;
+                }
+
                 int l = 0;
                 int r = H - 1;
                 if (i == 0) {
@@ -440,69 +450,82 @@ public:
 
                 if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
                     // accept
+                    cur.loss += delta;
                     value += d;
                     REP3 (w, l, r) {
                         for (int j : used[w]) {
-                            cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
                             cur.predicted_score[j] += d;
-                            cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
                         }
                     }
+                    if (cur.loss < best.loss) {
+                        best = cur;
+                    }
+                    return true;
+
+                } else {
+                    // reject
+                    return false;
                 }
+            };
+
+            auto try_update_sep = [&](bool is_row, int z, int nsep) -> bool {
+                assert (1 <= nsep and nsep <= H - 2);
+
+                auto& sep = (is_row ? cur.sep_x : cur.sep_y)[z];
+                auto& used = (is_row ? history.used_hr : history.used_vr)[z];
+                auto& value1 = (is_row ? cur.row1 : cur.col1)[z];
+                auto& value2 = (is_row ? cur.row2 : cur.col2)[z];
+
+                if (nsep == sep) {
+                    return false;
+                }
+
+                int64_t delta = 0;
+                REP3 (k, min(sep, nsep), max(sep, nsep)) {
+                    for (int j : used[k]) {
+                        delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                        cur.predicted_score[j] += (sep < nsep ? - value2 + value1 : - value1 + value2);
+                        delta += abs(cur.predicted_score[j] - history.actual_score[j]);
+                    }
+                }
+
+                if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
+                    // accept
+                    cur.loss += delta;
+                    sep = nsep;
+                    if (cur.loss < best.loss) {
+                        best = cur;
+                    }
+                    return true;
+
+                } else {
+                    // reject
+                    REP3 (k, min(sep, nsep), max(sep, nsep)) {
+                        for (int j : used[k]) {
+                            cur.predicted_score[j] -= (sep < nsep ? - value2 + value1 : - value1 + value2);
+                        }
+                    }
+                    return false;
+                }
+            };
+
+            if (bernoulli_distribution(0.9)(gen)) {
+                int i = uniform_int_distribution(0, 4 - 1)(gen);
+                int z = uniform_int_distribution<int>(0, H - 1)(gen);
+                int64_t d = uniform_int_distribution(-200, 200)(gen);
+
+                try_update_row(i, z, d);
 
             } else {
                 bool is_row = bernoulli_distribution(0.5)(gen);
                 int z = uniform_int_distribution<int>(0, H - 1)(gen);
                 int d = (bernoulli_distribution(0.5)(gen) ? 1 : -1);
+                int sep = (is_row ? cur.sep_x : cur.sep_y)[z];
+                int nsep = sep + d;
 
-                auto& sep = (is_row ? cur.sep_x : cur.sep_y)[z];
-                if (sep + d < 1 or sep + d > W - 2) {
-                    continue;
+                if (1 <= nsep and nsep <= W - 2) {
+                    try_update_sep(is_row, z, nsep);
                 }
-                auto& used = (is_row ? history.used_hr : history.used_vr)[z];
-                auto& value1 = (is_row ? cur.row1 : cur.col1)[z];
-                auto& value2 = (is_row ? cur.row2 : cur.col2)[z];
-
-                int64_t delta = 0;
-                if (d == -1) {
-                    for (int j : used[sep - 1]) {
-                        delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                        delta += abs(cur.predicted_score[j] - value1 + value2 - history.actual_score[j]);
-                    }
-                } else if (d == 1) {
-                    for (int j : used[sep]) {
-                        delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                        delta += abs(cur.predicted_score[j] - value2 + value1 - history.actual_score[j]);
-                    }
-                } else {
-                    assert (false);
-                }
-
-                if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
-                    // accept
-                    if (d == -1) {
-                        for (int j : used[sep - 1]) {
-                            cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                            cur.predicted_score[j] += - value1 + value2;
-                            cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
-                        }
-                        sep -= 1;
-                    } else if (d == 1) {
-                        for (int j : used[sep]) {
-                            cur.loss -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                            cur.predicted_score[j] += - value2 + value1;
-                            cur.loss += abs(cur.predicted_score[j] - history.actual_score[j]);
-                        }
-                        sep += 1;
-                    } else {
-                        assert (false);
-                    }
-                    assert (0 <= sep and sep <= H - 1);
-                }
-            }
-
-            if (cur.loss < best.loss) {
-                best = cur;
             }
         }
 
