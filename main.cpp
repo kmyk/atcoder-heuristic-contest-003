@@ -129,6 +129,34 @@ int64_t calculate_score(const vector<pair<int, int>>& path, const array<array<in
     return score;
 }
 
+template <class History>
+bool check_prediction(const array<array<int64_t, W - 1>, H>& hr, const array<array<int64_t, H - 1>, W>& vr, int64_t loss, History& history) {
+    REP (y, H) {
+        REP (x, W - 1) {
+            if (hr[y][x] < VALUE_MIN or VALUE_MAX < hr[y][x]) {
+                return false;
+            }
+        }
+    }
+    REP (x, W) {
+        REP (y, H - 1) {
+            if (vr[x][y] < VALUE_MIN or VALUE_MAX < vr[x][y]) {
+                return false;
+            }
+        }
+    }
+
+    int64_t actual_loss = 0;
+    REP (i, history.size()) {
+        actual_loss += abs(calculate_score(history.paths[i], hr, vr) - history.actual_score[i]);
+    }
+    if (loss != actual_loss) {
+        return false;
+    }
+
+    return true;
+}
+
 struct row_col_history {
     vector<vector<pair<int, int>>> paths;
     vector<int64_t> actual_score;
@@ -285,11 +313,7 @@ public:
         REP (i, 2) {
             auto& state = (i == 0 ? cur : best);
             auto [hr, vr] = get(state);
-            int64_t actual_loss = 0;
-            REP (i, history.size()) {
-                actual_loss += abs(calculate_score(history.paths[i], hr, vr) - history.actual_score[i]);
-            }
-            assert (state.loss == actual_loss);
+            assert (check_prediction(hr, vr, state.loss, history));
         }
 #endif
 #ifdef VERBOSE
@@ -564,11 +588,7 @@ public:
         REP (i, 2) {
             auto& state = (i == 0 ? cur : best);
             auto [hr, vr] = get(state);
-            int64_t actual_loss = 0;
-            REP (i, history.size()) {
-                actual_loss += abs(calculate_score(history.paths[i], hr, vr) - history.actual_score[i]);
-            }
-            assert (state.loss == actual_loss);
+            assert (check_prediction(hr, vr, state.loss, history));
         }
 #endif
 #ifdef VERBOSE
