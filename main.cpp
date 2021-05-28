@@ -130,17 +130,19 @@ int64_t calculate_score(const vector<pair<int, int>>& path, const array<array<in
 }
 
 struct row_col_history {
+    vector<vector<pair<int, int>>> paths;
     vector<int64_t> actual_score;
     array<vector<pair<int, int>>, H> used_row;
     array<vector<pair<int, int>>, W> used_col;
 
     int size() const {
-        return actual_score.size();
+        return paths.size();
     }
 
     void add(const vector<pair<int, int>>& path, int64_t score) {
         assert (not path.empty());
-        int j = actual_score.size();
+        int j = paths.size();
+        paths.push_back(path);
         actual_score.push_back(score);
 
         auto use = [&](vector<pair<int, int>>& used) {
@@ -279,6 +281,17 @@ public:
             try_update_row(is_row, z, d);
         }
 
+#ifdef LOCAL
+        REP (i, 2) {
+            auto& state = (i == 0 ? cur : best);
+            auto [hr, vr] = get(state);
+            int64_t actual_loss = 0;
+            REP (i, history.size()) {
+                actual_loss += abs(calculate_score(history.paths[i], hr, vr) - history.actual_score[i]);
+            }
+            assert (state.loss == actual_loss);
+        }
+#endif
 #ifdef VERBOSE
         cerr << "M1: iteration = " << iteration << ", loss = " << (history.size() == 0 ? -1 : best.loss / history.size()) << endl;
 #endif  // VERBOSE
@@ -301,17 +314,19 @@ public:
 };
 
 struct hr_vr_history {
+    vector<vector<pair<int, int>>> paths;
     vector<int64_t> actual_score;
     array<array<vector<int>, W - 1>, H> used_hr;
     array<array<vector<int>, H - 1>, W> used_vr;
 
     int size() const {
-        return actual_score.size();
+        return paths.size();
     }
 
     void add(const vector<pair<int, int>>& path, int64_t score) {
         assert (not path.empty());
-        int j = actual_score.size();
+        int j = paths.size();
+        paths.push_back(path);
         actual_score.push_back(score);
 
         REP (i, path.size() - 1) {
@@ -444,7 +459,8 @@ public:
                 REP3 (w, l, r) {
                     for (int j : used[w]) {
                         delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                        delta += abs(cur.predicted_score[j] + d - history.actual_score[j]);
+                        cur.predicted_score[j] += d;
+                        delta += abs(cur.predicted_score[j] - history.actual_score[j]);
                     }
                 }
 
@@ -452,11 +468,6 @@ public:
                     // accept
                     cur.loss += delta;
                     value += d;
-                    REP3 (w, l, r) {
-                        for (int j : used[w]) {
-                            cur.predicted_score[j] += d;
-                        }
-                    }
                     if (cur.loss < best.loss) {
                         best = cur;
                     }
@@ -464,6 +475,11 @@ public:
 
                 } else {
                     // reject
+                    REP3 (w, l, r) {
+                        for (int j : used[w]) {
+                            cur.predicted_score[j] -= d;
+                        }
+                    }
                     return false;
                 }
             };
@@ -529,6 +545,17 @@ public:
             }
         }
 
+#ifdef LOCAL
+        REP (i, 2) {
+            auto& state = (i == 0 ? cur : best);
+            auto [hr, vr] = get(state);
+            int64_t actual_loss = 0;
+            REP (i, history.size()) {
+                actual_loss += abs(calculate_score(history.paths[i], hr, vr) - history.actual_score[i]);
+            }
+            assert (state.loss == actual_loss);
+        }
+#endif
 #ifdef VERBOSE
         cerr << "M2: iteration = " << iteration << ", loss = " << (history.size() == 0 ? -1 : best.loss / history.size()) << endl;
 #endif  // VERBOSE
