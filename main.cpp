@@ -303,10 +303,60 @@ public:
                 }
             };
 
+            auto try_optimize_row = [&](bool is_row, int z) -> bool {
+                auto& value = (is_row ? cur.row : cur.col)[z];
+                auto& used = (is_row ? history.used_row : history.used_col)[z];
+
+                vector<pair<int64_t, int>> targets;
+                int sum_cnt = 0;
+                for (auto [j, cnt] : used) {
+                    assert (cnt >= 0);
+                    targets.emplace_back((history.actual_score[j] - cur.predicted_score[j]) / cnt, cnt);
+                    sum_cnt += cnt;
+                }
+                sort(ALL(targets));
+                int used_cnt = 0;
+                int64_t d = 0;
+                for (auto [target, cnt] : targets) {
+                    d = target;
+                    used_cnt += cnt;
+                    if (2 * used_cnt >= sum_cnt) {
+                        break;
+                    }
+                }
+                if (value + d < VALUE_MIN) {
+                    d = VALUE_MIN - value;
+                } else if (VALUE_MAX < value + d) {
+                    d = VALUE_MAX - value;
+                }
+                if (d == 0) {
+                    return false;
+                }
+
+                // accept
+                int64_t delta = 0;
+                for (auto [j, cnt] : used) {
+                    delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
+                    cur.predicted_score[j] += cnt * d;
+                    delta += abs(cur.predicted_score[j] - history.actual_score[j]);
+                }
+                assert (delta <= 0);
+                cur.loss += delta;
+                value += d;
+                if (cur.loss < best.loss) {
+                    best = cur;
+                }
+                return true;
+            };
+
             bool is_row = bernoulli_distribution(0.5)(gen);
             int z = uniform_int_distribution<int>(0, H - 1)(gen);
-            int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
-            try_update_row(is_row, z, d);
+            if (bernoulli_distribution(0.05)(gen)) {
+                try_optimize_row(is_row, z);
+            } else {
+                int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
+                try_update_row(is_row, z, d);
+            }
         }
 
 #ifdef LOCAL
