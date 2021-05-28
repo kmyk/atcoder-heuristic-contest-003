@@ -329,6 +329,11 @@ public:
                 } else if (VALUE_MAX < value + d) {
                     d = VALUE_MAX - value;
                 }
+                if (d < -500) {
+                    d = -500;
+                } else if (500 < d) {
+                    d = 500;
+                }
                 if (d == 0) {
                     return false;
                 }
@@ -351,7 +356,7 @@ public:
 
             bool is_row = bernoulli_distribution(0.5)(gen);
             int z = uniform_int_distribution<int>(0, H - 1)(gen);
-            if (bernoulli_distribution(0.05)(gen)) {
+            if (bernoulli_distribution(0.5)(gen)) {
                 try_optimize_row(is_row, z);
             } else {
                 int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
