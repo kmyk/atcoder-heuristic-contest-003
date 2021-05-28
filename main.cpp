@@ -530,17 +530,32 @@ public:
                 int z = uniform_int_distribution<int>(0, H - 1)(gen);
                 int64_t d = uniform_int_distribution(-200, 200)(gen);
 
-                try_update_row(i, z, d);
+                while (true) {
+                    if (not try_update_row(i, z, d)) {
+                        break;
+                    }
+                    if (bernoulli_distribution(0.2)(gen)) {
+                        break;
+                    }
+                }
 
             } else {
                 bool is_row = bernoulli_distribution(0.5)(gen);
                 int z = uniform_int_distribution<int>(0, H - 1)(gen);
                 int d = (bernoulli_distribution(0.5)(gen) ? 1 : -1);
-                int sep = (is_row ? cur.sep_x : cur.sep_y)[z];
-                int nsep = sep + d;
 
-                if (1 <= nsep and nsep <= W - 2) {
-                    try_update_sep(is_row, z, nsep);
+                while (true) {
+                    int sep = (is_row ? cur.sep_x : cur.sep_y)[z];
+                    int nsep = sep + d;
+                    if (nsep < 1 or W - 2 < nsep) {
+                        break;
+                    }
+                    if (not try_update_sep(is_row, z, nsep)) {
+                        break;
+                    }
+                    if (bernoulli_distribution(0.2)(gen)) {
+                        break;
+                    }
                 }
             }
         }
