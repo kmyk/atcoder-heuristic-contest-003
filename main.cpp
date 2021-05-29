@@ -129,8 +129,7 @@ int64_t calculate_score(const vector<pair<int, int>>& path, const array<array<in
     return score;
 }
 
-template <class History>
-bool check_prediction(const array<array<int64_t, W - 1>, H>& hr, const array<array<int64_t, H - 1>, W>& vr, int64_t loss, History& history) {
+bool check_prediction_range(const array<array<int64_t, W - 1>, H>& hr, const array<array<int64_t, H - 1>, W>& vr) {
     REP (y, H) {
         REP (x, W - 1) {
             if (hr[y][x] < VALUE_MIN or VALUE_MAX < hr[y][x]) {
@@ -145,16 +144,16 @@ bool check_prediction(const array<array<int64_t, W - 1>, H>& hr, const array<arr
             }
         }
     }
+    return true;
+}
 
+template <class History>
+bool check_prediction_loss(const array<array<int64_t, W - 1>, H>& hr, const array<array<int64_t, H - 1>, W>& vr, int64_t loss, History& history) {
     int64_t actual_loss = 0;
     REP (i, history.size()) {
         actual_loss += abs(calculate_score(history.paths[i], hr, vr) - history.actual_score[i]);
     }
-    if (loss != actual_loss) {
-        return false;
-    }
-
-    return true;
+    return (loss == actual_loss);
 }
 
 struct row_col_history {
@@ -368,7 +367,8 @@ public:
         REP (i, 2) {
             auto& state = (i == 0 ? cur : best);
             auto [hr, vr] = get(state);
-            assert (check_prediction(hr, vr, state.loss, history));
+            assert (check_prediction_range(hr, vr));
+            assert (check_prediction_loss(hr, vr, state.loss, history));
         }
 #endif
 #ifdef VERBOSE
@@ -426,8 +426,6 @@ class base_predictor_m2 {
     hr_vr_history history;
 
     struct prediction_state {
-        array<int, H> sep_x;
-        array<int, W> sep_y;
         array<int64_t, H> row1, row2;
         array<int64_t, W> col1, col2;
         vector<int64_t> predicted_score;
@@ -442,12 +440,12 @@ class base_predictor_m2 {
         array<array<int64_t, H - 1>, W> vr;
         REP (y, H) {
             REP (x, W - 1) {
-                hr[y][x] = (x < state.sep_x[y] ? state.row1 : state.row2)[y];
+                hr[y][x] = (W - 2 - x) * state.row1[y] / (W - 2) + x * state.row2[y] / (W - 2);
             }
         }
         REP (x, W) {
             REP (y, H - 1) {
-                vr[x][y] = (y < state.sep_y[x] ? state.col1 : state.col2)[x];
+                vr[x][y] = (H - 2 - y) * state.col1[x] / (H - 2) + y * state.col2[x] / (H - 2);
             }
         }
         return {hr, vr};
@@ -455,8 +453,6 @@ class base_predictor_m2 {
 
 public:
     base_predictor_m2() {
-        fill(ALL(cur.sep_x), W / 2);
-        fill(ALL(cur.sep_y), H / 2);
         fill(ALL(cur.row1), VALUE_CENTER);
         fill(ALL(cur.row2), VALUE_CENTER);
         fill(ALL(cur.col1), VALUE_CENTER);
@@ -518,27 +514,19 @@ public:
                 if (d == 0) {
                     return false;
                 }
-
-                int l = 0;
-                int r = H - 1;
-                if (i == 0) {
-                    r = cur.sep_x[z];
-                } else if (i == 1) {
-                    l = cur.sep_x[z];
-                } else if (i == 2) {
-                    r = cur.sep_y[z];
-                } else if (i == 3) {
-                    l = cur.sep_y[z];
-                } else {
-                    assert (false);
-                }
                 auto& used = (i < 2 ? history.used_hr : history.used_vr)[z];
 
                 int64_t delta = 0;
-                REP3 (w, l, r) {
-                    for (int j : used[w]) {
+                REP (x, W - 1) {
+                    for (int j : used[x]) {
                         delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                        cur.predicted_score[j] += d;
+                        if (i == 0 or i == 2) {
+                            cur.predicted_score[j] -= (W - 2 - x) * value / (W - 2);
+                            cur.predicted_score[j] += (W - 2 - x) * (value + d) / (W - 2);
+                        } else {
+                            cur.predicted_score[j] -= x * value / (W - 2);
+                            cur.predicted_score[j] += x * (value + d) / (W - 2);
+                        }
                         delta += abs(cur.predicted_score[j] - history.actual_score[j]);
                     }
                 }
@@ -554,87 +542,31 @@ public:
 
                 } else {
                     // reject
-                    REP3 (w, l, r) {
-                        for (int j : used[w]) {
-                            cur.predicted_score[j] -= d;
+                    REP (x, W - 1) {
+                        for (int j : used[x]) {
+                            if (i == 0 or i == 2) {
+                                cur.predicted_score[j] -= (W - 2 - x) * (value + d) / (W - 2);
+                                cur.predicted_score[j] += (W - 2 - x) * value / (W - 2);
+                            } else {
+                                cur.predicted_score[j] -= x * (value + d) / (W - 2);
+                                cur.predicted_score[j] += x * value / (W - 2);
+                            }
                         }
                     }
                     return false;
                 }
             };
 
-            auto try_update_sep = [&](bool is_row, int z, int nsep) -> bool {
-                assert (1 <= nsep and nsep <= H - 2);
+            int i = uniform_int_distribution(0, 4 - 1)(gen);
+            int z = uniform_int_distribution<int>(0, H - 1)(gen);
+            int64_t d = uniform_int_distribution(-200, 200)(gen);
 
-                auto& sep = (is_row ? cur.sep_x : cur.sep_y)[z];
-                auto& used = (is_row ? history.used_hr : history.used_vr)[z];
-                auto& value1 = (is_row ? cur.row1 : cur.col1)[z];
-                auto& value2 = (is_row ? cur.row2 : cur.col2)[z];
-
-                if (nsep == sep) {
-                    return false;
+            while (true) {
+                if (not try_update_row(i, z, d)) {
+                    break;
                 }
-
-                int64_t delta = 0;
-                REP3 (k, min(sep, nsep), max(sep, nsep)) {
-                    for (int j : used[k]) {
-                        delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                        cur.predicted_score[j] += (sep < nsep ? - value2 + value1 : - value1 + value2);
-                        delta += abs(cur.predicted_score[j] - history.actual_score[j]);
-                    }
-                }
-
-                if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
-                    // accept
-                    cur.loss += delta;
-                    sep = nsep;
-                    if (cur.loss < best.loss) {
-                        best = cur;
-                    }
-                    return true;
-
-                } else {
-                    // reject
-                    REP3 (k, min(sep, nsep), max(sep, nsep)) {
-                        for (int j : used[k]) {
-                            cur.predicted_score[j] -= (sep < nsep ? - value2 + value1 : - value1 + value2);
-                        }
-                    }
-                    return false;
-                }
-            };
-
-            if (bernoulli_distribution(0.9)(gen)) {
-                int i = uniform_int_distribution(0, 4 - 1)(gen);
-                int z = uniform_int_distribution<int>(0, H - 1)(gen);
-                int64_t d = uniform_int_distribution(-200, 200)(gen);
-
-                while (true) {
-                    if (not try_update_row(i, z, d)) {
-                        break;
-                    }
-                    if (bernoulli_distribution(0.2)(gen)) {
-                        break;
-                    }
-                }
-
-            } else {
-                bool is_row = bernoulli_distribution(0.5)(gen);
-                int z = uniform_int_distribution<int>(0, H - 1)(gen);
-                int d = (bernoulli_distribution(0.5)(gen) ? 1 : -1);
-
-                while (true) {
-                    int sep = (is_row ? cur.sep_x : cur.sep_y)[z];
-                    int nsep = sep + d;
-                    if (nsep < 1 or W - 2 < nsep) {
-                        break;
-                    }
-                    if (not try_update_sep(is_row, z, nsep)) {
-                        break;
-                    }
-                    if (bernoulli_distribution(0.2)(gen)) {
-                        break;
-                    }
+                if (bernoulli_distribution(0.2)(gen)) {
+                    break;
                 }
             }
         }
@@ -642,8 +574,16 @@ public:
 #ifdef LOCAL
         REP (i, 2) {
             auto& state = (i == 0 ? cur : best);
+            REP (y, H) {
+                assert (VALUE_MIN <= state.row1[y] and state.row1[y] <= VALUE_MAX);
+                assert (VALUE_MIN <= state.row2[y] and state.row2[y] <= VALUE_MAX);
+            }
+            REP (x, W) {
+                assert (VALUE_MIN <= state.col1[x] and state.col1[x] <= VALUE_MAX);
+                assert (VALUE_MIN <= state.col2[x] and state.col2[x] <= VALUE_MAX);
+            }
             auto [hr, vr] = get(state);
-            assert (check_prediction(hr, vr, state.loss, history));
+            assert (check_prediction_loss(hr, vr, state.loss, history));
         }
 #endif
 #ifdef VERBOSE
@@ -664,11 +604,6 @@ public:
             cerr << ' ' << best.row2[y];
         }
         cerr << endl;
-        cerr << "    sep_x =";
-        REP (y, H) {
-            cerr << ' ' << best.sep_x[y];
-        }
-        cerr << endl;
         cerr << "    col1 =";
         REP (x, W) {
             cerr << ' ' << best.col1[x];
@@ -677,11 +612,6 @@ public:
         cerr << "    col2 =";
         REP (x, W) {
             cerr << ' ' << best.col2[x];
-        }
-        cerr << endl;
-        cerr << "    sep_y =";
-        REP (x, W) {
-            cerr << ' ' << best.sep_y[x];
         }
         cerr << endl;
     }
