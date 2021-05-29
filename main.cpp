@@ -264,7 +264,7 @@ public:
             }
 
             auto probability = [&](int64_t delta) -> double {
-                constexpr double boltzmann = 0.0001;
+                constexpr double boltzmann = 0.00001;
                 return exp(- boltzmann * delta / temprature);
             };
 
@@ -356,12 +356,8 @@ public:
 
             bool is_row = bernoulli_distribution(0.5)(gen);
             int z = uniform_int_distribution<int>(0, H - 1)(gen);
-            if (bernoulli_distribution(0.5)(gen)) {
-                try_optimize_row(is_row, z);
-            } else {
-                int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
-                try_update_row(is_row, z, d);
-            }
+            int64_t d = uniform_int_distribution<int>(-200, 200)(gen);
+            try_update_row(is_row, z, d);
         }
 
 #ifdef LOCAL
@@ -502,7 +498,7 @@ public:
             }
 
             auto probability = [&](int64_t delta) -> double {
-                constexpr double boltzmann = 0.0001;
+                constexpr double boltzmann = 0.00001;
                 return exp(- boltzmann * delta / temprature);
             };
 
