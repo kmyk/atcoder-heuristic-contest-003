@@ -1,5 +1,7 @@
 #!/bin/bash
 mkdir -p log
+average=$(python3 scripts/measure.py --count=960 2>&1 | tee log/all.txt | tail -n 1 | cut -d = -f 2)
+echo all: $average
 for M in 1 2 ; do
     average=$(python3 scripts/measure.py --count=200 -M $M 2>&1 | tee log/M${M}.txt | tail -n 1 | cut -d = -f 2)
     echo M = $M: $average
