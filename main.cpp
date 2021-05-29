@@ -264,7 +264,7 @@ public:
             }
 
             auto probability = [&](int64_t delta) -> double {
-                return max(0.0, 1.0 - delta / 1000.0);
+                return max(0.0, 1.0 - delta / 3000.0);
             };
 
             auto try_update_row = [&](bool is_row, int z, int64_t d) -> bool {
@@ -497,7 +497,7 @@ public:
             }
 
             auto probability = [&](int64_t delta) -> double {
-                return max(0.0, 1.0 - delta / 1000.0);
+                return max(0.0, 1.0 - delta / 2000.0);
             };
 
             auto try_update_row = [&](int i, int z, int64_t d) -> bool {
@@ -598,7 +598,7 @@ public:
                 }
             };
 
-            if (bernoulli_distribution(0.9)(gen)) {
+            if (bernoulli_distribution(0.7)(gen)) {
                 int i = uniform_int_distribution(0, 4 - 1)(gen);
                 int z = uniform_int_distribution<int>(0, H - 1)(gen);
                 int64_t d = uniform_int_distribution(-200, 200)(gen);
@@ -695,7 +695,7 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         tie(sy, sx, ty, tx) = read();
 
         // solve
-        bool is_m1 = (predictor1.get_loss() < predictor2.get_loss() + 1000);
+        bool is_m1 = (predictor1.get_loss() < predictor2.get_loss() + 1500);
         auto [hr, vr] = (is_m1 ? predictor1.get() : predictor2.get());
         vector<pair<int, int>> path = solve_with_dijkstra(sy, sx, ty, tx, hr, vr);
 
