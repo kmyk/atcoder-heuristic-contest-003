@@ -264,8 +264,7 @@ public:
             }
 
             auto probability = [&](int64_t delta) -> double {
-                constexpr double boltzmann = 0.00001;
-                return exp(- boltzmann * delta / temprature);
+                return max(0.0, 1.0 - delta / 1000.0);
             };
 
             auto try_update_row = [&](bool is_row, int z, int64_t d) -> bool {
@@ -498,8 +497,7 @@ public:
             }
 
             auto probability = [&](int64_t delta) -> double {
-                constexpr double boltzmann = 0.00001;
-                return exp(- boltzmann * delta / temprature);
+                return max(0.0, 1.0 - delta / 1000.0);
             };
 
             auto try_update_row = [&](int i, int z, int64_t d) -> bool {
