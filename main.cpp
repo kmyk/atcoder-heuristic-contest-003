@@ -705,17 +705,17 @@ void solve(function<tuple<int, int, int, int> ()> read, function<int64_t (const 
         int64_t score = write(get_command_from_path(path));
         history.emplace_back(path, score);
 
-        // update
-        predictor1.add(path, score);
-        predictor2.add(path, score);
-        predictor1.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 1) / (2 * K));
-        predictor2.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 2) / (2 * K));
-
 #ifdef VERBOSE
         auto [hr1, vr1] = predictor1.get();
         auto [hr2, vr2] = predictor2.get();
         cerr << "use M" << (is_m1 ? 1 : 2) << " (M1 " << (calculate_score(path, hr1, vr1) - score) / static_cast<int>(path.size()) << ", M2 " << (calculate_score(path, hr2, vr2) - score) / static_cast<int>(path.size()) << ")" << endl;
 #endif  // VERBOSE
+
+        // update
+        predictor1.add(path, score);
+        predictor2.add(path, score);
+        predictor1.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 1) / (2 * K));
+        predictor2.update(gen, clock_begin + (clock_end - clock_begin) * (2 * query + 2) / (2 * K));
     }
 #ifdef VERBOSE
     predictor1.report();
