@@ -269,10 +269,10 @@ public:
 
             auto try_update_row = [&](bool is_row, int z, int64_t d) -> bool {
                 auto& value = (is_row ? cur.row : cur.col)[z];
-                if (value + d < VALUE_MIN) {
-                    d = VALUE_MIN - value;
-                } else if (VALUE_MAX < value + d) {
-                    d = VALUE_MAX - value;
+                if (value + d < VALUE_MIN + 300) {
+                    d = VALUE_MIN + 300 - value;
+                } else if (VALUE_MAX - 300 < value + d) {
+                    d = VALUE_MAX - 300 - value;
                 }
                 if (d == 0) {
                     return false;
@@ -453,10 +453,10 @@ public:
                 assert (0 <= i and i < 4);
 
                 auto& value = (i == 0 ? cur.row1 : i == 1 ? cur.row2 : i == 2 ? cur.col1 : cur.col2)[z];
-                if (value + d < VALUE_MIN) {
-                    d = VALUE_MIN - value;
-                } else if (VALUE_MAX < value + d) {
-                    d = VALUE_MAX - value;
+                if (value + d < VALUE_MIN + 500) {
+                    d = VALUE_MIN + 500 - value;
+                } else if (VALUE_MAX - 500 < value + d) {
+                    d = VALUE_MAX - 500 - value;
                 }
                 if (d == 0) {
                     return false;
@@ -519,17 +519,23 @@ public:
                 }
 
                 int64_t delta = 0;
+                int64_t d = (sep < nsep ? - value2 + value1 : - value1 + value2);
+                assert (abs(nsep - sep) == 1);
                 REP3 (k, min(sep, nsep), max(sep, nsep)) {
                     for (int j : used[k]) {
                         delta -= abs(cur.predicted_score[j] - history.actual_score[j]);
-                        cur.predicted_score[j] += (sep < nsep ? - value2 + value1 : - value1 + value2);
-                        delta += abs(cur.predicted_score[j] - history.actual_score[j]);
+                        delta += abs(cur.predicted_score[j] + d - history.actual_score[j]);
                     }
                 }
 
                 if (delta <= 0 or bernoulli_distribution(probability(delta))(gen)) {
                     // accept
                     cur.loss += delta;
+                    REP3 (k, min(sep, nsep), max(sep, nsep)) {
+                        for (int j : used[k]) {
+                            cur.predicted_score[j] += d;
+                        }
+                    }
                     sep = nsep;
                     if (cur.loss < best.loss) {
                         best = cur;
@@ -538,11 +544,6 @@ public:
 
                 } else {
                     // reject
-                    REP3 (k, min(sep, nsep), max(sep, nsep)) {
-                        for (int j : used[k]) {
-                            cur.predicted_score[j] -= (sep < nsep ? - value2 + value1 : - value1 + value2);
-                        }
-                    }
                     return false;
                 }
             };
